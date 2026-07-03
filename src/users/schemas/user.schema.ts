@@ -24,6 +24,18 @@ export class User {
 
   @Prop({ default: null })
   displayName: string;
+
+  @Prop({ default: null })
+  resetOtpHash: string | null;
+
+  @Prop({ default: null })
+  resetOtpExpiresAt: Date | null;
+
+  @Prop({ default: null })
+  resetOtpMethod: string | null;
+
+  @Prop({ default: null })
+  resetOtpDestination: string | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

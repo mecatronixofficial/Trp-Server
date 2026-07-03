@@ -21,6 +21,22 @@ export class SaleItem {
 }
 export const SaleItemSchema = SchemaFactory.createForClass(SaleItem);
 
+@Schema({ _id: false })
+export class SalePayment {
+  @Prop({ required: true })
+  date: Date;
+
+  @Prop({ required: true, min: 0 })
+  amount: number;
+
+  @Prop({ enum: PaymentMode, required: true })
+  paymentMode: PaymentMode;
+
+  @Prop({ default: '' })
+  notes: string;
+}
+export const SalePaymentSchema = SchemaFactory.createForClass(SalePayment);
+
 @Schema({ timestamps: true })
 export class Sale {
   @Prop({ required: true })
@@ -51,6 +67,9 @@ export class Sale {
   // totalAmount - paidAmount
   @Prop({ required: true, default: 0 })
   balanceAmount: number;
+
+  @Prop({ type: [SalePaymentSchema], default: [] })
+  payments: SalePayment[];
 
   @Prop({ default: '' })
   notes: string;

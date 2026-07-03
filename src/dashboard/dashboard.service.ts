@@ -4,6 +4,7 @@ import { MakingCostService } from '../making-cost/making-cost.service';
 import { SalesService } from '../sales/sales.service';
 import { WastageService } from '../wastage/wastage.service';
 import { StockService } from '../stock/stock.service';
+import { CustomersService } from '../customers/customers.service';
 
 function startOfDay(d: Date) {
   const x = new Date(d);
@@ -30,6 +31,7 @@ export class DashboardService {
     private salesService: SalesService,
     private wastageService: WastageService,
     private stockService: StockService,
+    private customersService: CustomersService,
   ) {}
 
   async getAdminDashboard() {
@@ -47,6 +49,10 @@ export class DashboardService {
       salesMonth,
       salesYear,
       last7DaysSales,
+      pendingPayments,
+      recentPaymentsToday,
+      truckCustomerSummary,
+      recentCustomers,
     ] = await Promise.all([
       this.productionService.sumBySizeInRange(todayStart, todayEnd),
       this.salesService.sumInRange(todayStart, todayEnd),
@@ -57,6 +63,10 @@ export class DashboardService {
       this.salesService.sumInRange(startOfMonth(now), todayEnd),
       this.salesService.sumInRange(startOfYear(now), todayEnd),
       this.getLast7DaysSales(),
+      this.salesService.getPendingPayments(8),
+      this.salesService.getRecentPayments(todayStart, todayEnd, 8),
+      this.customersService.getTruckCustomerSummary(),
+      this.customersService.getRecentCustomers(8),
     ]);
 
     const todayProductionTotal = Object.values(productionBySize).reduce((s, v) => s + v, 0);
@@ -71,8 +81,20 @@ export class DashboardService {
         wastage: wastageTotal,
         makingCost: makingCostToday,
         profit: todayProfit,
+        collection: salesToday.totalPaid,
+        balance: salesToday.totalBalance,
       },
       truckWiseSalesToday: truckWiseToday,
+      payments: {
+        pendingBills: pendingPayments,
+        recentToday: recentPaymentsToday,
+        pendingAmount: pendingPayments.reduce((sum, sale) => sum + sale.balanceAmount, 0),
+        todayCollectedLater: recentPaymentsToday.reduce((sum, payment) => sum + payment.amount, 0),
+      },
+      customers: {
+        truckWise: truckCustomerSummary,
+        recent: recentCustomers,
+      },
       pendingStock: stock,
       monthlySales: salesMonth.totalAmount,
       yearlySales: salesYear.totalAmount,

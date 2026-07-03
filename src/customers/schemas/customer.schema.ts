@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 import { SaleType } from '../../common/enums';
 
 export type CustomerDocument = Customer & Document;
@@ -20,6 +20,9 @@ export class Customer {
 
   @Prop({ default: 0 })
   creditBalance: number; // running balance owed by this customer
+
+  @Prop({ type: Types.ObjectId, ref: 'Truck', default: null })
+  truck: Types.ObjectId | null;
 
   @Prop({ default: true })
   isActive: boolean;

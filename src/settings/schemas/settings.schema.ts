@@ -15,6 +15,12 @@ export class Settings {
   phoneNumber: string;
 
   @Prop({ default: '' })
+  whatsappNumber: string;
+
+  @Prop({ default: '' })
+  email: string;
+
+  @Prop({ default: '' })
   gstNumber: string;
 
   @Prop({ default: '' })

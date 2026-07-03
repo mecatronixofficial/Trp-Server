@@ -3,7 +3,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SalesService } from './sales.service';
-import { CreateSaleDto, UpdateSaleDto } from './dto/sale.dto';
+import { AddSalePaymentDto, CreateSaleDto, UpdateSaleDto } from './dto/sale.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('sales')
@@ -37,6 +37,11 @@ export class SalesController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateSaleDto, @CurrentUser() user: any) {
     return this.salesService.update(id, dto, user);
+  }
+
+  @Post(':id/payments')
+  addPayment(@Param('id') id: string, @Body() dto: AddSalePaymentDto, @CurrentUser() user: any) {
+    return this.salesService.addPayment(id, dto, user);
   }
 
   @Delete(':id')
