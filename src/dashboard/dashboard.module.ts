@@ -6,9 +6,10 @@ import { MakingCostModule } from '../making-cost/making-cost.module';
 import { SalesModule } from '../sales/sales.module';
 import { WastageModule } from '../wastage/wastage.module';
 import { StockModule } from '../stock/stock.module';
+import { CustomersModule } from '../customers/customers.module';
 
 @Module({
-  imports: [ProductionModule, MakingCostModule, SalesModule, WastageModule, StockModule],
+  imports: [ProductionModule, MakingCostModule, SalesModule, WastageModule, StockModule, CustomersModule],
   providers: [DashboardService],
   controllers: [DashboardController],
 })

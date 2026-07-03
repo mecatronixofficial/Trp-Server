@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsMongoId, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { SaleType } from '../../common/enums';
 
 export class CreateCustomerDto {
@@ -16,6 +16,9 @@ export class CreateCustomerDto {
 
   @IsOptional() @IsString()
   notes?: string;
+
+  @IsOptional() @IsMongoId()
+  truck?: string;
 }
 
 export class UpdateCustomerDto {
@@ -36,4 +39,7 @@ export class UpdateCustomerDto {
 
   @IsOptional() @IsString()
   notes?: string;
+
+  @IsOptional() @IsMongoId()
+  truck?: string;
 }

@@ -17,6 +17,10 @@ export class UsersService {
     return this.userModel.findById(id).exec();
   }
 
+  findAdmin() {
+    return this.userModel.findOne({ role: Role.ADMIN, isActive: true }).exec();
+  }
+
   async createUser(params: {
     username: string;
     password: string;
@@ -38,7 +42,13 @@ export class UsersService {
     const passwordHash = await bcrypt.hash(newPassword, 10);
     return this.userModel.findByIdAndUpdate(
       userId,
-      { passwordHash },
+      {
+        passwordHash,
+        resetOtpHash: null,
+        resetOtpExpiresAt: null,
+        resetOtpMethod: null,
+        resetOtpDestination: null,
+      },
       { new: true },
     );
   }

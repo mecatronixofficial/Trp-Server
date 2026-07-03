@@ -2,7 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Sale, SaleDocument } from './schemas/sale.schema';
-import { CreateSaleDto, UpdateSaleDto } from './dto/sale.dto';
+import { AddSalePaymentDto, CreateSaleDto, UpdateSaleDto } from './dto/sale.dto';
 import { CustomersService } from '../customers/customers.service';
 
 interface AuthUser {
@@ -86,7 +86,7 @@ export class SalesService {
     return this.saleModel
       .find(query)
       .populate('truck', 'truckName truckNumber')
-      .populate('customer', 'name phoneNumber')
+      .populate('customer', 'name phoneNumber address defaultSaleType creditBalance truck createdAt')
       .sort({ date: -1, createdAt: -1 })
       .exec();
   }
@@ -138,6 +138,33 @@ export class SalesService {
     }
 
     return updated;
+  }
+
+  async addPayment(id: string, dto: AddSalePaymentDto, user: AuthUser) {
+    const sale = await this.saleModel.findById(id);
+    if (!sale) throw new NotFoundException('Sale not found');
+    if (user.role === 'truck' && sale.truck.toString() !== user.truck) {
+      throw new ForbiddenException('Not allowed to update this sale payment');
+    }
+
+    const amount = Math.min(Number(dto.amount), sale.balanceAmount);
+    if (amount <= 0) return sale;
+
+    sale.paidAmount += amount;
+    sale.balanceAmount -= amount;
+    sale.paymentMode = dto.paymentMode;
+    sale.payments = sale.payments || [];
+    sale.payments.push({
+      date: new Date(dto.date),
+      amount,
+      paymentMode: dto.paymentMode,
+      notes: dto.notes || '',
+    } as any);
+
+    await sale.save();
+    await this.customersService.adjustCreditBalance(sale.customer.toString(), -amount);
+
+    return this.findOne(id, user);
   }
 
   async remove(id: string, user: AuthUser) {
@@ -204,5 +231,46 @@ export class SalesService {
     const totals: Record<string, number> = { retail: 0, wholesale: 0 };
     for (const sale of sales) totals[sale.saleType] += sale.totalAmount;
     return totals;
+  }
+
+  async getPendingPayments(limit = 10) {
+    return this.saleModel
+      .find({ balanceAmount: { $gt: 0 } })
+      .populate('truck', 'truckName truckNumber')
+      .populate('customer', 'name phoneNumber creditBalance truck')
+      .sort({ date: 1, createdAt: 1 })
+      .limit(limit)
+      .exec();
+  }
+
+  async getRecentPayments(from?: Date, to?: Date, limit = 10) {
+    const sales = await this.saleModel
+      .find({ 'payments.0': { $exists: true } })
+      .populate('truck', 'truckName truckNumber')
+      .populate('customer', 'name phoneNumber')
+      .sort({ updatedAt: -1 })
+      .limit(100)
+      .exec();
+
+    const payments: any[] = [];
+    for (const sale of sales) {
+      for (const payment of sale.payments || []) {
+        const date = new Date(payment.date);
+        if (from && date < from) continue;
+        if (to && date > to) continue;
+        payments.push({
+          saleId: sale._id,
+          date,
+          amount: payment.amount,
+          paymentMode: payment.paymentMode,
+          notes: payment.notes,
+          customer: sale.customer,
+          truck: sale.truck,
+          billDate: sale.date,
+        });
+      }
+    }
+
+    return payments.sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, limit);
   }
 }

@@ -43,3 +43,17 @@ export class CreateSaleDto {
 }
 
 export class UpdateSaleDto extends CreateSaleDto {}
+
+export class AddSalePaymentDto {
+  @IsDateString()
+  date: string;
+
+  @IsNumber() @Min(0.01)
+  amount: number;
+
+  @IsEnum(PaymentMode)
+  paymentMode: PaymentMode;
+
+  @IsOptional() @IsString()
+  notes?: string;
+}
