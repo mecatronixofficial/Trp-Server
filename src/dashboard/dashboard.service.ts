@@ -5,6 +5,7 @@ import { SalesService } from '../sales/sales.service';
 import { WastageService } from '../wastage/wastage.service';
 import { StockService } from '../stock/stock.service';
 import { CustomersService } from '../customers/customers.service';
+import { WorkersService } from '../workers/workers.service';
 
 function startOfDay(d: Date) {
   const x = new Date(d);
@@ -32,6 +33,7 @@ export class DashboardService {
     private wastageService: WastageService,
     private stockService: StockService,
     private customersService: CustomersService,
+    private workersService: WorkersService,
   ) {}
 
   async getAdminDashboard() {
@@ -53,6 +55,7 @@ export class DashboardService {
       recentPaymentsToday,
       truckCustomerSummary,
       recentCustomers,
+      workerBuyingToday,
     ] = await Promise.all([
       this.productionService.sumBySizeInRange(todayStart, todayEnd),
       this.salesService.sumInRange(todayStart, todayEnd),
@@ -67,6 +70,7 @@ export class DashboardService {
       this.salesService.getRecentPayments(todayStart, todayEnd, 8),
       this.customersService.getTruckCustomerSummary(),
       this.customersService.getRecentCustomers(8),
+      this.workersService.totalBuyingInRange(todayStart, todayEnd),
     ]);
 
     const todayProductionTotal = Object.values(productionBySize).reduce((s, v) => s + v, 0);
@@ -80,6 +84,7 @@ export class DashboardService {
         salesCount: salesToday.count,
         wastage: wastageTotal,
         makingCost: makingCostToday,
+        workerBuying: workerBuyingToday,
         profit: todayProfit,
         collection: salesToday.totalPaid,
         balance: salesToday.totalBalance,
