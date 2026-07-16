@@ -12,6 +12,9 @@ export enum WorkerAttendanceStatus {
 
 @Schema({ timestamps: true })
 export class WorkerAttendance {
+  @Prop({ type: Types.ObjectId, ref: 'Branch', required: true, index: true })
+  branch: Types.ObjectId;
+
   @Prop({ type: Types.ObjectId, ref: Worker.name, required: true })
   worker: Types.ObjectId;
 

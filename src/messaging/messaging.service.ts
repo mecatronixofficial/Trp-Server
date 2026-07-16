@@ -12,6 +12,10 @@ export class MessagingService {
     return this.sendMessage(channel, to, message);
   }
 
+  async sendWhatsapp(to: string, message: string) {
+    return this.sendMessage('whatsapp', to, message);
+  }
+
   private async sendMessage(channel: OtpChannel, to: string, message: string) {
     const webhookDelivery = await this.sendWebhookMessage(channel, to, message);
     if (webhookDelivery) return webhookDelivery;

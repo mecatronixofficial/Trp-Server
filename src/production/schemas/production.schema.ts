@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 import { IceBarSize, Shift } from '../../common/enums';
 
 export type ProductionDocument = Production & Document;
@@ -16,6 +16,7 @@ export const SizeQuantitySchema = SchemaFactory.createForClass(SizeQuantity);
 
 @Schema({ timestamps: true })
 export class Production {
+  @Prop({ type: Types.ObjectId, ref: 'Branch', required: true, index: true }) branch: Types.ObjectId;
   @Prop({ required: true })
   date: Date;
 

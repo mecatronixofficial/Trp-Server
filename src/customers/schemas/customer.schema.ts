@@ -6,6 +6,9 @@ export type CustomerDocument = Customer & Document;
 
 @Schema({ timestamps: true })
 export class Customer {
+  @Prop({ enum: ['local', 'truck'], default: 'local', index: true })
+  customerType: 'local' | 'truck';
+
   @Prop({ required: true, trim: true })
   name: string;
 

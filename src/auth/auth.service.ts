@@ -32,6 +32,7 @@ export class AuthService {
       username: user.username,
       role: user.role,
       truck: user.truck ? user.truck.toString() : null,
+      branch: user.branch ? user.branch.toString() : null,
     };
 
     return {
@@ -42,6 +43,7 @@ export class AuthService {
         role: user.role,
         truck: user.truck,
         displayName: user.displayName,
+        branch: user.branch,
       },
     };
   }
