@@ -39,6 +39,9 @@ export const SalePaymentSchema = SchemaFactory.createForClass(SalePayment);
 
 @Schema({ timestamps: true })
 export class Sale {
+  @Prop({ type: Types.ObjectId, ref: 'Branch', required: true, index: true })
+  branch: Types.ObjectId;
+
   @Prop({ required: true })
   date: Date;
 
@@ -83,3 +86,4 @@ export const SaleSchema = SchemaFactory.createForClass(Sale);
 SaleSchema.index({ date: 1 });
 SaleSchema.index({ truck: 1, date: 1 });
 SaleSchema.index({ customer: 1 });
+SaleSchema.index({ branch: 1, date: 1 });

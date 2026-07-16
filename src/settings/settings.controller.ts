@@ -15,7 +15,7 @@ export class SettingsController {
     return this.settingsService.get();
   }
 
-  @Roles(Role.ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @Patch()
   update(@Body() dto: any) {
     return this.settingsService.update(dto);

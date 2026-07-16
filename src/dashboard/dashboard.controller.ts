@@ -11,21 +11,21 @@ import { DashboardService } from './dashboard.service';
 export class DashboardController {
   constructor(private dashboardService: DashboardService) {}
 
-  @Roles(Role.ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @Get('admin')
-  getAdmin() {
-    return this.dashboardService.getAdminDashboard();
+  getAdmin(@CurrentUser() user: any) {
+    return this.dashboardService.getAdminDashboard(user);
   }
 
-  @Roles(Role.ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @Get('monthly-profit')
-  getMonthlyProfit(@Query('months') months?: string) {
-    return this.dashboardService.getMonthlyProfitChart(months ? Number(months) : 6);
+  getMonthlyProfit(@CurrentUser() user: any, @Query('months') months?: string) {
+    return this.dashboardService.getMonthlyProfitChart(months ? Number(months) : 6, user?.role === Role.ADMIN ? user.branch : user?.selectedBranch || undefined);
   }
 
   @Roles(Role.TRUCK)
   @Get('truck')
   getTruck(@CurrentUser() user: any) {
-    return this.dashboardService.getTruckDashboard(user.truck);
+    return this.dashboardService.getTruckDashboard(user.truck, user);
   }
 }

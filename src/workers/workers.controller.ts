@@ -12,75 +12,76 @@ import {
   UpdateWorkerDto,
 } from './dto/worker.dto';
 import { WorkersService } from './workers.service';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN)
+@Roles(Role.SUPER_ADMIN, Role.ADMIN)
 @Controller('workers')
 export class WorkersController {
   constructor(private workersService: WorkersService) {}
 
   @Post()
-  createWorker(@Body() dto: CreateWorkerDto) {
-    return this.workersService.createWorker(dto);
+  createWorker(@Body() dto: CreateWorkerDto, @CurrentUser() user: any) {
+    return this.workersService.createWorker(dto, user);
   }
 
   @Get()
-  findWorkers(@Query('includeInactive') includeInactive?: string) {
-    return this.workersService.findWorkers(includeInactive);
+  findWorkers(@CurrentUser() user: any, @Query('includeInactive') includeInactive?: string, @Query('branch') branch?: string) {
+    return this.workersService.findWorkers(includeInactive, user, branch);
   }
 
   @Get('summary')
-  monthlySummary(@Query('month') month?: string) {
-    return this.workersService.monthlySummary(month);
+  monthlySummary(@CurrentUser() user: any, @Query('month') month?: string, @Query('branch') branch?: string) {
+    return this.workersService.monthlySummary(month, user, branch);
   }
 
   @Patch(':id')
-  updateWorker(@Param('id') id: string, @Body() dto: UpdateWorkerDto) {
-    return this.workersService.updateWorker(id, dto);
+  updateWorker(@Param('id') id: string, @Body() dto: UpdateWorkerDto, @CurrentUser() user: any) {
+    return this.workersService.updateWorker(id, dto, user);
   }
 
   @Delete(':id')
-  removeWorker(@Param('id') id: string) {
-    return this.workersService.removeWorker(id);
+  removeWorker(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.workersService.removeWorker(id, user);
   }
 
   @Post('attendance')
-  createAttendance(@Body() dto: CreateWorkerAttendanceDto) {
-    return this.workersService.createAttendance(dto);
+  createAttendance(@Body() dto: CreateWorkerAttendanceDto, @CurrentUser() user: any) {
+    return this.workersService.createAttendance(dto, user);
   }
 
   @Post('buying')
-  createBuying(@Body() dto: CreateWorkerBuyingDto) {
-    return this.workersService.createBuying(dto);
+  createBuying(@Body() dto: CreateWorkerBuyingDto, @CurrentUser() user: any) {
+    return this.workersService.createBuying(dto, user);
   }
 
   @Get('attendance')
-  findAttendance(@Query('from') from?: string, @Query('to') to?: string, @Query('worker') worker?: string) {
-    return this.workersService.findAttendance(from, to, worker);
+  findAttendance(@CurrentUser() user: any, @Query('from') from?: string, @Query('to') to?: string, @Query('worker') worker?: string, @Query('branch') branch?: string) {
+    return this.workersService.findAttendance(from, to, worker, user, branch);
   }
 
   @Get('buying')
-  findBuying(@Query('from') from?: string, @Query('to') to?: string, @Query('worker') worker?: string) {
-    return this.workersService.findAttendance(from, to, worker);
+  findBuying(@CurrentUser() user: any, @Query('from') from?: string, @Query('to') to?: string, @Query('worker') worker?: string, @Query('branch') branch?: string) {
+    return this.workersService.findAttendance(from, to, worker, user, branch);
   }
 
   @Patch('attendance/:id')
-  updateAttendance(@Param('id') id: string, @Body() dto: UpdateWorkerAttendanceDto) {
-    return this.workersService.updateAttendance(id, dto);
+  updateAttendance(@Param('id') id: string, @Body() dto: UpdateWorkerAttendanceDto, @CurrentUser() user: any) {
+    return this.workersService.updateAttendance(id, dto, user);
   }
 
   @Patch('buying/:id')
-  updateBuying(@Param('id') id: string, @Body() dto: UpdateWorkerBuyingDto) {
-    return this.workersService.updateBuying(id, dto);
+  updateBuying(@Param('id') id: string, @Body() dto: UpdateWorkerBuyingDto, @CurrentUser() user: any) {
+    return this.workersService.updateBuying(id, dto, user);
   }
 
   @Delete('attendance/:id')
-  removeAttendance(@Param('id') id: string) {
-    return this.workersService.removeAttendance(id);
+  removeAttendance(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.workersService.removeAttendance(id, user);
   }
 
   @Delete('buying/:id')
-  removeBuying(@Param('id') id: string) {
-    return this.workersService.removeAttendance(id);
+  removeBuying(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.workersService.removeAttendance(id, user);
   }
 }

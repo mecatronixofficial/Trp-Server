@@ -17,13 +17,13 @@ export class PriceListController {
     return this.priceListService.findByCustomer(customerId);
   }
 
-  @Roles(Role.ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @Post()
   upsert(@Body() dto: UpsertPriceDto) {
     return this.priceListService.upsert(dto);
   }
 
-  @Roles(Role.ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.priceListService.remove(id);

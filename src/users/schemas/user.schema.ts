@@ -15,6 +15,9 @@ export class User {
   @Prop({ required: true, enum: Role })
   role: Role;
 
+  @Prop({ type: Types.ObjectId, ref: 'Branch', default: null, index: true })
+  branch: Types.ObjectId | null;
+
   // Only set when role === TRUCK. Links the login to a Truck document.
   @Prop({ type: Types.ObjectId, ref: 'Truck', default: null })
   truck: Types.ObjectId | null;

@@ -5,30 +5,31 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../common/enums';
 import { MakingCostService } from './making-cost.service';
 import { CreateMakingCostDto, UpdateMakingCostDto } from './dto/making-cost.dto';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN)
+@Roles(Role.SUPER_ADMIN, Role.ADMIN)
 @Controller('making-cost')
 export class MakingCostController {
   constructor(private costService: MakingCostService) {}
 
   @Post()
-  create(@Body() dto: CreateMakingCostDto) {
-    return this.costService.create(dto);
+  create(@Body() dto: CreateMakingCostDto, @CurrentUser() user: any) {
+    return this.costService.create(dto, user);
   }
 
   @Get()
-  findAll(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.costService.findAll(from, to);
+  findAll(@CurrentUser() user: any, @Query('from') from?: string, @Query('to') to?: string) {
+    return this.costService.findAll(from, to, user);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateMakingCostDto) {
-    return this.costService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateMakingCostDto, @CurrentUser() user: any) {
+    return this.costService.update(id, dto, user);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.costService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.costService.remove(id, user);
   }
 }

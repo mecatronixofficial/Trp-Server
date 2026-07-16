@@ -3,10 +3,13 @@
  * Creates the default admin account defined in .env (SEED_ADMIN_USERNAME / SEED_ADMIN_PASSWORD).
  */
 import 'dotenv/config';
+import { setServers } from 'node:dns';
 import * as mongoose from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { UserSchema } from './users/schemas/user.schema';
 import { Role } from './common/enums';
+
+setServers(['1.1.1.1', '8.8.8.8']);
 
 async function seed() {
   const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/tiruppur_ice';
@@ -19,7 +22,14 @@ async function seed() {
 
   const existing = await UserModel.findOne({ username });
   if (existing) {
-    console.log(`Admin user "${username}" already exists. Skipping.`);
+    if (existing.role !== Role.SUPER_ADMIN) {
+      existing.role = Role.SUPER_ADMIN;
+      existing.branch = null;
+      await existing.save();
+      console.log(`Existing admin "${username}" upgraded to super admin.`);
+    } else {
+      console.log(`Super admin user "${username}" already exists. Skipping.`);
+    }
     await mongoose.disconnect();
     return;
   }
@@ -28,7 +38,7 @@ async function seed() {
   await UserModel.create({
     username,
     passwordHash,
-    role: Role.ADMIN,
+    role: Role.SUPER_ADMIN,
     truck: null,
     isActive: true,
     displayName: 'Administrator',

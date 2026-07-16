@@ -3,7 +3,9 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { json, urlencoded, type NextFunction, type Request, type Response } from 'express';
 import { AppModule } from './app.module';
+import { setServers } from 'node:dns';
 
+setServers(['1.1.1.1', '8.8.8.8']);
 const API_PREFIX = 'api';
 const DEFAULT_PORT = 4000;
 const DEFAULT_BODY_LIMIT = '1mb';
@@ -46,7 +48,11 @@ function parseCorsOrigins(value: string | undefined, nodeEnv: string): CorsOrigi
     .map((origin) => origin.trim())
     .filter(Boolean);
 
-  return origins.length ? origins : false;
+  if (nodeEnv !== 'production') {
+    origins.push('http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:3001', 'http://127.0.0.1:3001');
+  }
+
+  return origins.length ? [...new Set(origins)] : false;
 }
 
 function securityHeaders(nodeEnv: string) {
@@ -70,6 +76,7 @@ function rateLimit(options: RateLimitOptions) {
   const requests = new Map<string, RateLimitRecord>();
 
   return (req: Request, res: Response, next: NextFunction) => {
+    if (req.method === 'OPTIONS') return next();
     const now = Date.now();
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const limit = req.path === `/${API_PREFIX}/auth/login` ? options.authMaxRequests : options.maxRequests;
@@ -121,14 +128,14 @@ async function bootstrap() {
   app.use(json({ limit: bodyLimit }));
   app.use(urlencoded({ extended: true, limit: bodyLimit }));
   app.use(securityHeaders(nodeEnv));
-  app.use(rateLimit(rateLimitOptions));
   app.enableCors({
     origin: parseCorsOrigins(config.get<string>('CORS_ORIGIN'), nodeEnv),
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Branch-Id'],
     maxAge: 86400,
   });
+  app.use(rateLimit(rateLimitOptions));
   app.enableShutdownHooks();
   app.setGlobalPrefix(API_PREFIX);
   app.useGlobalPipes(

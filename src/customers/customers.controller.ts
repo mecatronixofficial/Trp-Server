@@ -23,19 +23,19 @@ export class CustomersController {
     return this.customersService.findOne(id, user);
   }
 
-  @Roles(Role.ADMIN, Role.TRUCK)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.TRUCK)
   @Post()
   create(@Body() dto: CreateCustomerDto, @CurrentUser() user: any) {
     return this.customersService.create(dto, user);
   }
 
-  @Roles(Role.ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateCustomerDto) {
     return this.customersService.update(id, dto);
   }
 
-  @Roles(Role.ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.customersService.remove(id);

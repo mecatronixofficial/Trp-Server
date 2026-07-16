@@ -1,10 +1,13 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 export type TruckDocument = Truck & Document;
 
 @Schema({ timestamps: true })
 export class Truck {
+  @Prop({ type: Types.ObjectId, ref: 'Branch', required: true, index: true })
+  branch: Types.ObjectId;
+
   @Prop({ required: true, trim: true })
   truckName: string;
 
@@ -16,6 +19,9 @@ export class Truck {
 
   @Prop({ required: true, trim: true })
   phoneNumber: string;
+
+  @Prop({ default: 0, min: 0 })
+  monthlySalary: number;
 
   // login credentials live in the User collection; this stores which
   // username is tied to this truck for quick display in admin UI.

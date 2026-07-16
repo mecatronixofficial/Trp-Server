@@ -6,6 +6,7 @@ import { StockController } from './stock.controller';
 import { ProductionModule } from '../production/production.module';
 import { SalesModule } from '../sales/sales.module';
 import { WastageModule } from '../wastage/wastage.module';
+import { TruckLoadsModule } from '../truck-loads/truck-loads.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { WastageModule } from '../wastage/wastage.module';
     ProductionModule,
     SalesModule,
     WastageModule,
+    TruckLoadsModule,
   ],
   providers: [StockService],
   controllers: [StockController],

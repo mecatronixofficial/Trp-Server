@@ -15,6 +15,10 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { ReportsModule } from './reports/reports.module';
 import { SettingsModule } from './settings/settings.module';
 import { WorkersModule } from './workers/workers.module';
+import { BranchesModule } from './branches/branches.module';
+import { TruckLoadsModule } from './truck-loads/truck-loads.module';
+import { DriverExpensesModule } from './driver-expenses/driver-expenses.module';
+import { DailyClosingModule } from './daily-closing/daily-closing.module';
 
 @Module({
   imports: [
@@ -40,6 +44,10 @@ import { WorkersModule } from './workers/workers.module';
     ReportsModule,
     SettingsModule,
     WorkersModule,
+    BranchesModule,
+    TruckLoadsModule,
+    DriverExpensesModule,
+    DailyClosingModule,
   ],
 })
 export class AppModule {}

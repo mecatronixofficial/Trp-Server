@@ -1,10 +1,16 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 export type WorkerDocument = Worker & Document;
 
 @Schema({ timestamps: true })
 export class Worker {
+  @Prop({ type: Types.ObjectId, ref: 'Branch', required: true, index: true })
+  branch: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'Truck', unique: true, sparse: true })
+  truck?: Types.ObjectId;
+
   @Prop({ required: true, trim: true })
   name: string;
 

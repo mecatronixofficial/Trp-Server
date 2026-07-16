@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Customer, CustomerDocument } from './schemas/customer.schema';
@@ -16,16 +16,16 @@ export class CustomersService {
 
   create(dto: CreateCustomerDto, user?: AuthUser) {
     const truck = user?.role === 'truck' ? user.truck : dto.truck || null;
-    return this.customerModel.create({ ...dto, truck });
+    const customerType = user?.role === 'truck' ? 'truck' : dto.customerType || (truck ? 'truck' : 'local');
+    if (customerType === 'truck' && !truck) throw new BadRequestException('Select a truck for a truck customer');
+    return this.customerModel.create({ ...dto, customerType, truck: customerType === 'local' ? null : truck });
   }
 
   findAll(search?: string, user?: AuthUser) {
     const query: any = {};
     const and: any[] = [];
 
-    if (user?.role === 'truck') {
-      and.push({ $or: [{ truck: user.truck }, { truck: null }, { truck: { $exists: false } }] });
-    }
+    if (user?.role === 'truck') and.push({ truck: user.truck });
 
     if (search) {
       and.push({ $or: [
@@ -42,15 +42,16 @@ export class CustomersService {
   async findOne(id: string, user?: AuthUser) {
     const customer = await this.customerModel.findById(id).populate('truck', 'truckName truckNumber driverName').exec();
     if (!customer) throw new NotFoundException('Customer not found');
-    const customerTruck = (customer.truck as any)?._id?.toString?.() || customer.truck?.toString?.();
-    if (user?.role === 'truck' && customerTruck && customerTruck !== user.truck) {
-      throw new ForbiddenException('Not allowed to view this customer');
-    }
     return customer;
   }
 
   async update(id: string, dto: UpdateCustomerDto) {
-    const customer = await this.customerModel.findByIdAndUpdate(id, dto, { new: true });
+    const existing = await this.customerModel.findById(id);
+    if (!existing) throw new NotFoundException('Customer not found');
+    const customerType = dto.customerType || existing.customerType || (existing.truck ? 'truck' : 'local');
+    const truck = dto.truck !== undefined ? dto.truck : existing.truck;
+    if (customerType === 'truck' && !truck) throw new BadRequestException('Select a truck for a truck customer');
+    const customer = await this.customerModel.findByIdAndUpdate(id, { ...dto, customerType, truck: customerType === 'local' ? null : truck }, { new: true });
     if (!customer) throw new NotFoundException('Customer not found');
     return customer;
   }

@@ -7,44 +7,44 @@ import { Role } from '../common/enums';
 import { ReportsService } from './reports.service';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN)
+@Roles(Role.SUPER_ADMIN, Role.ADMIN)
 @Controller('reports')
 export class ReportsController {
   constructor(private reportsService: ReportsService) {}
 
   @Get('profit-loss')
-  profitLoss(@Query('from') from: string, @Query('to') to: string, @Query('truck') truck?: string) {
-    return this.reportsService.profitLoss({ from, to, truck });
+  profitLoss(@CurrentUser() user: any, @Query('from') from: string, @Query('to') to: string, @Query('truck') truck?: string) {
+    return this.reportsService.profitLoss({ from, to, truck }, user);
   }
 
   @Get('truck-wise')
-  truckWise(@Query('from') from: string, @Query('to') to: string) {
-    return this.reportsService.truckWise({ from, to });
+  truckWise(@CurrentUser() user: any, @Query('from') from: string, @Query('to') to: string) {
+    return this.reportsService.truckWise({ from, to }, user);
   }
 
   @Get('customer-wise')
-  customerWise(@Query('from') from: string, @Query('to') to: string) {
-    return this.reportsService.customerWise({ from, to });
+  customerWise(@CurrentUser() user: any, @Query('from') from: string, @Query('to') to: string) {
+    return this.reportsService.customerWise({ from, to }, user);
   }
 
   @Get('size-wise')
-  sizeWise(@Query('from') from: string, @Query('to') to: string, @Query('truck') truck?: string) {
-    return this.reportsService.sizeWise({ from, to, truck });
+  sizeWise(@CurrentUser() user: any, @Query('from') from: string, @Query('to') to: string, @Query('truck') truck?: string) {
+    return this.reportsService.sizeWise({ from, to, truck }, user);
   }
 
   @Get('wastage')
-  wastage(@Query('from') from: string, @Query('to') to: string, @Query('truck') truck?: string) {
-    return this.reportsService.wastageReport({ from, to, truck });
+  wastage(@CurrentUser() user: any, @Query('from') from: string, @Query('to') to: string, @Query('truck') truck?: string) {
+    return this.reportsService.wastageReport({ from, to, truck }, user);
   }
 
   @Get('expense')
-  expense(@Query('from') from: string, @Query('to') to: string) {
-    return this.reportsService.expenseReport({ from, to });
+  expense(@CurrentUser() user: any, @Query('from') from: string, @Query('to') to: string) {
+    return this.reportsService.expenseReport({ from, to }, user);
   }
 
   @Get('retail-vs-wholesale')
-  retailVsWholesale(@Query('from') from: string, @Query('to') to: string) {
-    return this.reportsService.retailVsWholesale({ from, to });
+  retailVsWholesale(@CurrentUser() user: any, @Query('from') from: string, @Query('to') to: string) {
+    return this.reportsService.retailVsWholesale({ from, to }, user);
   }
 
   @Get('sales')
@@ -60,12 +60,12 @@ export class ReportsController {
   }
 
   @Get('top-customers')
-  topCustomers(@Query('from') from: string, @Query('to') to: string, @Query('limit') limit?: string) {
-    return this.reportsService.topCustomers({ from, to }, limit ? Number(limit) : 5);
+  topCustomers(@CurrentUser() user: any, @Query('from') from: string, @Query('to') to: string, @Query('limit') limit?: string) {
+    return this.reportsService.topCustomers({ from, to }, limit ? Number(limit) : 5, user);
   }
 
   @Get('top-sizes')
-  topSizes(@Query('from') from: string, @Query('to') to: string, @Query('limit') limit?: string) {
-    return this.reportsService.topSizes({ from, to }, limit ? Number(limit) : 3);
+  topSizes(@CurrentUser() user: any, @Query('from') from: string, @Query('to') to: string, @Query('limit') limit?: string) {
+    return this.reportsService.topSizes({ from, to }, limit ? Number(limit) : 3, user);
   }
 }

@@ -18,7 +18,7 @@ export class UsersService {
   }
 
   findAdmin() {
-    return this.userModel.findOne({ role: Role.ADMIN, isActive: true }).exec();
+    return this.userModel.findOne({ role: Role.SUPER_ADMIN, isActive: true }).exec();
   }
 
   async createUser(params: {
@@ -27,6 +27,7 @@ export class UsersService {
     role: Role;
     truck?: string | null;
     displayName?: string;
+    branch?: string | null;
   }) {
     const passwordHash = await bcrypt.hash(params.password, 10);
     return this.userModel.create({
@@ -35,6 +36,7 @@ export class UsersService {
       role: params.role,
       truck: params.truck || null,
       displayName: params.displayName || params.username,
+      branch: params.branch || null,
     });
   }
 
@@ -63,5 +65,19 @@ export class UsersService {
 
   async deleteByTruck(truckId: string) {
     return this.userModel.deleteMany({ truck: truckId });
+  }
+
+  findBranchAdmin(branchId: string) {
+    return this.userModel.findOne({ branch: branchId, role: Role.ADMIN }).exec();
+  }
+
+  findBranchAdmins(branchId?: string) {
+    const query: any = { role: Role.ADMIN };
+    if (branchId) query.branch = branchId;
+    return this.userModel.find(query).select('-passwordHash -resetOtpHash').populate('branch', 'name code').sort({ createdAt: -1 }).exec();
+  }
+
+  async deleteBranchUsers(branchId: string) {
+    return this.userModel.deleteMany({ branch: branchId });
   }
 }

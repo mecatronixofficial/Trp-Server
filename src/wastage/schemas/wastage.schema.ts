@@ -6,6 +6,7 @@ export type WastageDocument = Wastage & Document;
 
 @Schema({ timestamps: true })
 export class Wastage {
+  @Prop({ type: Types.ObjectId, ref: 'Branch', required: true, index: true }) branch: Types.ObjectId;
   @Prop({ required: true })
   date: Date;
 
