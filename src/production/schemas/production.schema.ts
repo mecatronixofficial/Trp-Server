@@ -23,6 +23,22 @@ export class Production {
   @Prop({ enum: Shift, default: Shift.FULL_DAY })
   shift: Shift;
 
+  // box counter reading at the start of the day (continues from previous day's boxClose + 1)
+  @Prop({ required: true })
+  boxOpen: number;
+
+  // box counter reading at the end of the day
+  @Prop({ required: true })
+  boxClose: number;
+
+  // boxes made today, accounting for the counter wrapping back to 1 after totalBoxes
+  @Prop({ default: 0 })
+  boxesProduced: number;
+
+  // snapshot of settings.barsPerBox used to compute totalBars for this record
+  @Prop({ default: 0 })
+  barsPerBoxUsed: number;
+
   @Prop({ type: [SizeQuantitySchema], default: [] })
   sizeWise: SizeQuantity[];
 

@@ -11,12 +11,15 @@ import { MakingCostModule } from './making-cost/making-cost.module';
 import { SalesModule } from './sales/sales.module';
 import { WastageModule } from './wastage/wastage.module';
 import { StockModule } from './stock/stock.module';
+import { StockEntryModule } from './stock-entry/stock-entry.module';
+import { OutsourceEntryModule } from './outsource-entry/outsource-entry.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ReportsModule } from './reports/reports.module';
 import { SettingsModule } from './settings/settings.module';
 import { WorkersModule } from './workers/workers.module';
 import { BranchesModule } from './branches/branches.module';
 import { TruckLoadsModule } from './truck-loads/truck-loads.module';
+import { TruckAssignmentsModule } from './truck-assignments/truck-assignments.module';
 import { DriverExpensesModule } from './driver-expenses/driver-expenses.module';
 import { DailyClosingModule } from './daily-closing/daily-closing.module';
 
@@ -40,12 +43,15 @@ import { DailyClosingModule } from './daily-closing/daily-closing.module';
     SalesModule,
     WastageModule,
     StockModule,
+    StockEntryModule,
+    OutsourceEntryModule,
     DashboardModule,
     ReportsModule,
     SettingsModule,
     WorkersModule,
     BranchesModule,
     TruckLoadsModule,
+    TruckAssignmentsModule,
     DriverExpensesModule,
     DailyClosingModule,
   ],

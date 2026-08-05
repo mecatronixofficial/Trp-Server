@@ -4,9 +4,10 @@ import { Production, ProductionSchema } from './schemas/production.schema';
 import { ProductionService } from './production.service';
 import { ProductionController } from './production.controller';
 import { DailyClosing, DailyClosingSchema } from '../daily-closing/schemas/daily-closing.schema';
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: Production.name, schema: ProductionSchema }, { name: DailyClosing.name, schema: DailyClosingSchema }])],
+  imports: [MongooseModule.forFeature([{ name: Production.name, schema: ProductionSchema }, { name: DailyClosing.name, schema: DailyClosingSchema }]), SettingsModule],
   providers: [ProductionService],
   controllers: [ProductionController],
   exports: [MongooseModule, ProductionService],

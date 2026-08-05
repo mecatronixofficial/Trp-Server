@@ -1,14 +1,5 @@
-import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
-import { IceBarSize, Shift } from '../../common/enums';
-
-export class SizeQuantityDto {
-  @IsEnum(IceBarSize)
-  size: IceBarSize;
-
-  @IsNumber() @Min(0)
-  quantity: number;
-}
+import { IsDateString, IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { Shift } from '../../common/enums';
 
 export class CreateProductionDto {
   @IsDateString()
@@ -17,10 +8,11 @@ export class CreateProductionDto {
   @IsOptional() @IsEnum(Shift)
   shift?: Shift;
 
-  @IsArray() @ArrayMinSize(1)
-  @ValidateNested({ each: true })
-  @Type(() => SizeQuantityDto)
-  sizeWise: SizeQuantityDto[];
+  @IsInt() @Min(1)
+  boxOpen: number;
+
+  @IsInt() @Min(1)
+  boxClose: number;
 
   @IsOptional() @IsString()
   notes?: string;

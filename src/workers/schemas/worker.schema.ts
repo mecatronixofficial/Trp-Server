@@ -20,9 +20,6 @@ export class Worker {
   @Prop({ default: '', trim: true })
   role: string;
 
-  @Prop({ default: 0 })
-  monthlySalary: number;
-
   @Prop({ default: true })
   isActive: boolean;
 

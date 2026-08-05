@@ -24,6 +24,29 @@ export class TruckLoadsService {
     return this.loadModel.create({ ...dto, truck: truckId, branch: truck.branch, date: new Date(dto.date), size: dto.size || '1' });
   }
 
+  async upsertAssignedLoad(truckId: string, branch: string, date: string, quantity: number, notes?: string) {
+    await this.assertTripOpen(truckId, date);
+    const { from } = this.dateBounds(date);
+    return this.loadModel.findOneAndUpdate(
+      { truck: truckId, branch, date: from },
+      { truck: truckId, branch, date: from, size: '1', quantity, notes: notes || '' },
+      { new: true, upsert: true },
+    );
+  }
+
+  async createAssignedLoad(truckId: string, branch: string, date: string, quantity: number, notes?: string) {
+    await this.assertTripOpen(truckId, date);
+    const { from } = this.dateBounds(date);
+    return this.loadModel.create({
+      truck: truckId,
+      branch,
+      date: from,
+      size: '1',
+      quantity,
+      notes: notes || '',
+    });
+  }
+
   findAll(user: any, truck?: string, from?: string, to?: string) {
     const query: any = {};
     const branch = user.role === 'super_admin' ? user.selectedBranch : user.branch;
@@ -99,7 +122,7 @@ export class TruckLoadsService {
   private dateQuery(date: string | Date) { const { from, to } = this.dateBounds(date); return { date: { $gte: from, $lte: to } }; }
 
   async checkReconciliation(user: any, truckId: string, date: string) {
-    const from = new Date(`${date}T00:00:00.000Z`); const to = new Date(`${date}T23:59:59.999Z`);
+    const { from, to } = this.dateBounds(date);
     const branch = user.role === 'super_admin' ? user.selectedBranch : user.branch;
     await this.loadModel.updateMany({ truck: truckId, date: { $gte: from, $lte: to }, ...(branch ? { branch } : {}) }, { checkedAt: new Date(), checkedBy: user.userId });
     return { success: true };

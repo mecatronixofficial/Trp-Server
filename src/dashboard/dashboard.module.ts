@@ -9,9 +9,10 @@ import { StockModule } from '../stock/stock.module';
 import { CustomersModule } from '../customers/customers.module';
 import { WorkersModule } from '../workers/workers.module';
 import { TruckLoadsModule } from '../truck-loads/truck-loads.module';
+import { TrucksModule } from '../trucks/trucks.module';
 
 @Module({
-  imports: [ProductionModule, MakingCostModule, SalesModule, WastageModule, StockModule, CustomersModule, WorkersModule, TruckLoadsModule],
+  imports: [ProductionModule, MakingCostModule, SalesModule, WastageModule, StockModule, CustomersModule, WorkersModule, TruckLoadsModule, TrucksModule],
   providers: [DashboardService],
   controllers: [DashboardController],
 })

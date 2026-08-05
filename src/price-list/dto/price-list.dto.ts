@@ -1,12 +1,9 @@
 import { IsEnum, IsMongoId, IsNumber, Min } from 'class-validator';
-import { IceBarSize, SaleType } from '../../common/enums';
+import { SaleType } from '../../common/enums';
 
 export class UpsertPriceDto {
   @IsMongoId()
   customer: string;
-
-  @IsEnum(IceBarSize)
-  size: IceBarSize;
 
   @IsEnum(SaleType)
   saleType: SaleType;

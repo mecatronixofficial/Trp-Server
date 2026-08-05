@@ -29,19 +29,18 @@ export class WorkersService {
     return this.workerModel.create({ ...dto, branch: this.branchFor(user, (dto as any).branch, true) });
   }
 
-  createDriver(truck: string, branch: string, name: string, phoneNumber: string, monthlySalary = 0) {
+  createDriver(truck: string, branch: string, name: string, phoneNumber: string) {
     return this.workerModel.create({
       truck,
       branch,
       name,
       phoneNumber,
       role: 'Driver',
-      monthlySalary,
       isActive: true,
     });
   }
 
-  updateDriver(truck: string, values: { name?: string; phoneNumber?: string; monthlySalary?: number; isActive?: boolean }) {
+  updateDriver(truck: string, values: { name?: string; phoneNumber?: string; isActive?: boolean }) {
     return this.workerModel.findOneAndUpdate({ truck }, values, { new: true }).exec();
   }
 
@@ -153,9 +152,7 @@ export class WorkersService {
         workerId: worker._id,
         name: worker.name,
         role: worker.role,
-        monthlySalary: Number(worker.monthlySalary || 0),
         buyingAmount,
-        balanceAmount: Number(worker.monthlySalary || 0) - buyingAmount,
         buyingDays: workerRecords.length,
       };
     });
