@@ -11,9 +11,6 @@ export class CreateWorkerDto {
   @IsOptional() @IsString()
   role?: string;
 
-  @IsNumber() @Min(0)
-  monthlySalary: number;
-
   @IsOptional() @IsBoolean()
   isActive?: boolean;
 

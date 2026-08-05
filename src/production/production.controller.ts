@@ -23,6 +23,11 @@ export class ProductionController {
     return this.productionService.findAll(from, to, user);
   }
 
+  @Get('next-box')
+  getNextBoxOpen(@CurrentUser() user: any) {
+    return this.productionService.getNextBoxOpen(user);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: any) {
     return this.productionService.findOne(id, user);

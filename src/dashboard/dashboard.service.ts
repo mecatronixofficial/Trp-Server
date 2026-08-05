@@ -7,6 +7,7 @@ import { StockService } from '../stock/stock.service';
 import { CustomersService } from '../customers/customers.service';
 import { WorkersService } from '../workers/workers.service';
 import { TruckLoadsService } from '../truck-loads/truck-loads.service';
+import { TrucksService } from '../trucks/trucks.service';
 
 function startOfDay(d: Date) {
   const x = new Date(d);
@@ -36,6 +37,7 @@ export class DashboardService {
     private customersService: CustomersService,
     private workersService: WorkersService,
     private truckLoadsService: TruckLoadsService,
+    private trucksService: TrucksService,
   ) {}
 
   async getAdminDashboard(user?: any) {
@@ -151,12 +153,13 @@ export class DashboardService {
     const todayEnd = endOfDay(now);
 
     const branch = user?.branch;
-    const [salesToday, wastageToday, returnedToday, loadedBySize, truckStock] = await Promise.all([
+    const [salesToday, wastageToday, returnedToday, loadedBySize, truckStock, truck] = await Promise.all([
       this.salesService.sumInRange(todayStart, todayEnd, truckId),
       this.wastageService.totalInRange(todayStart, todayEnd, truckId, branch, undefined, 'unsold'),
       this.wastageService.totalInRange(todayStart, todayEnd, truckId, branch, 'unsold'),
       this.truckLoadsService.sumBySizeInRange(todayStart, todayEnd, branch, truckId),
       this.stockService.getTruckStock(truckId, user, now),
+      this.trucksService.findOne(truckId, user).catch(() => null),
     ]);
 
     const sizeWiseToday = await this.salesService.sumBySizeInRange(todayStart, todayEnd, truckId);
@@ -173,6 +176,14 @@ export class DashboardService {
       todayReturned: returnedToday,
       remainingBars: truckStock.totalStock,
       truckStock: truckStock.sizeWise,
+      truck: truck
+        ? {
+            truckName: truck.truckName,
+            truckNumber: truck.truckNumber,
+            driverName: truck.driverName,
+            phoneNumber: truck.phoneNumber,
+          }
+        : null,
     };
   }
 }

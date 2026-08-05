@@ -32,6 +32,14 @@ export class Settings {
   // low-stock alert threshold used by the dashboard, per bar
   @Prop({ default: 20 })
   lowStockThreshold: number;
+
+  // total boxes in the mold/box counter cycle before it wraps back to 1
+  @Prop({ default: 200 })
+  totalBoxes: number;
+
+  // ice bars produced per box
+  @Prop({ default: 2 })
+  barsPerBox: number;
 }
 
 export const SettingsSchema = SchemaFactory.createForClass(Settings);

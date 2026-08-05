@@ -12,7 +12,7 @@ export class PriceListService {
 
   upsert(dto: UpsertPriceDto) {
     return this.priceModel.findOneAndUpdate(
-      { customer: dto.customer, size: dto.size, saleType: dto.saleType },
+      { customer: dto.customer, saleType: dto.saleType },
       { price: dto.price },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
@@ -22,8 +22,8 @@ export class PriceListService {
     return this.priceModel.find({ customer: customerId }).exec();
   }
 
-  async getPrice(customerId: string, size: string, saleType: string) {
-    const entry = await this.priceModel.findOne({ customer: customerId, size, saleType }).exec();
+  async getPrice(customerId: string, saleType: string) {
+    const entry = await this.priceModel.findOne({ customer: customerId, saleType }).exec();
     return entry ? entry.price : null;
   }
 

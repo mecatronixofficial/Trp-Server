@@ -46,7 +46,6 @@ export class TrucksService {
         String(branch),
         dto.driverName,
         dto.phoneNumber,
-        dto.monthlySalary || 0,
       );
     } catch (error) {
       await this.usersService.deleteByTruck(truck._id.toString());
@@ -75,13 +74,11 @@ export class TrucksService {
     const filter: any = { _id: id };
     if (actor?.role !== Role.SUPER_ADMIN) filter.branch = actor?.branch;
     else if (actor?.selectedBranch) filter.branch = actor.selectedBranch;
-    const { monthlySalary, ...truckUpdate } = dto;
-    const truck = await this.truckModel.findOneAndUpdate(filter, truckUpdate, { new: true });
+    const truck = await this.truckModel.findOneAndUpdate(filter, dto, { new: true });
     if (!truck) throw new NotFoundException('Truck not found');
     await this.workersService.updateDriver(id, {
       ...(dto.driverName !== undefined ? { name: dto.driverName } : {}),
       ...(dto.phoneNumber !== undefined ? { phoneNumber: dto.phoneNumber } : {}),
-      ...(monthlySalary !== undefined ? { monthlySalary } : {}),
       ...(dto.status !== undefined ? { isActive: dto.status } : {}),
     });
     return truck;

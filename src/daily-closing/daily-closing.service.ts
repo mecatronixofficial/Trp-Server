@@ -52,6 +52,8 @@ export class DailyClosingService implements OnModuleInit, OnModuleDestroy {
     const drivers: any[] = await this.truckLoads.reconciliation({ ...user, role: 'admin', branch }, date);
     const unclosed = drivers.filter((driver) => !driver.driverClosed);
     if (unclosed.length) throw new BadRequestException({ message: 'All drivers must close their truck day first', unclosedDrivers: unclosed.map((driver) => ({ truckId: driver.truckId, driverName: driver.truck?.driverName || 'Driver', truckName: driver.truck?.truckName || 'Truck', reason: driver.closeReason })) });
+    const unchecked = drivers.filter((driver) => !driver.checked);
+    if (unchecked.length) throw new BadRequestException({ message: 'Admin must check every closed truck before closing the branch', unclosedDrivers: unchecked.map((driver) => ({ truckId: driver.truckId, driverName: driver.truck?.driverName || 'Driver', truckName: driver.truck?.truckName || 'Truck', reason: 'Truck closing has not been checked' })) });
     const row = await this.calculate(branch, date);
     if (row.closingBalance > 0) {
       row.returned = row.closingBalance;
