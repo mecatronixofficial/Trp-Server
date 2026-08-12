@@ -52,11 +52,18 @@ export class StockService {
   async getTruckStock(truckId: string, user: any, asOfDate = new Date()) {
     if (user.role === 'truck' && user.truck !== truckId) throw new ForbiddenException('Not allowed to view another truck stock');
     const branch = user.role === 'super_admin' ? user.selectedBranch : user.branch;
-    const end = new Date(asOfDate); end.setHours(23, 59, 59, 999);
+    // Driver availability is a daily balance: today's assigned bars less
+    // today's truck sales and wastage/returns. Historical loads must not be
+    // carried into the new driver's dashboard.
+    const day = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(asOfDate);
+    const start = new Date(`${day}T00:00:00.000+05:30`);
+    const end = new Date(`${day}T23:59:59.999+05:30`);
     const [loaded, sold, wasted] = await Promise.all([
-      this.truckLoadsService.sumBySizeInRange(EPOCH, end, branch, truckId),
-      this.salesService.sumBySizeInRange(EPOCH, end, truckId, branch),
-      this.wastageService.sumBySizeInRange(EPOCH, end, truckId, branch),
+      this.truckLoadsService.sumBySizeInRange(start, end, branch, truckId),
+      this.salesService.sumBySizeInRange(start, end, truckId, branch),
+      this.wastageService.sumBySizeInRange(start, end, truckId, branch),
     ]);
     const sizeWise = ICE_BAR_SIZES.map((size) => ({ size, quantity: (loaded[size] || 0) - (sold[size] || 0) - (wasted[size] || 0) }));
     return { truck: truckId, asOfDate, sizeWise, totalStock: sizeWise.reduce((sum, row) => sum + row.quantity, 0) };

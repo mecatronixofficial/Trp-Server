@@ -25,7 +25,8 @@ export class CustomersService {
     const query: any = {};
     const and: any[] = [];
 
-    if (user?.role === 'truck') and.push({ truck: user.truck });
+    // Drivers can search every existing customer when recording a sale.
+    // The sale itself is still stored against the logged-in driver's truck.
 
     if (search) {
       and.push({ $or: [

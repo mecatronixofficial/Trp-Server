@@ -43,26 +43,29 @@ export class SalesService {
     if (user.role === 'truck' && dto.truck !== user.truck) {
       throw new ForbiddenException('You can only add sales for your own truck');
     }
-    const truck = await this.truckModel.findById(truckId).exec();
-    if (!truck) throw new NotFoundException('Truck not found');
-    const branch = truck.branch?.toString();
-    if (user.role !== 'super_admin' && branch !== user.branch) throw new ForbiddenException('Truck belongs to another branch');
+    const truck = truckId ? await this.truckModel.findById(truckId).exec() : null;
+    if (truckId && !truck) throw new NotFoundException('Truck not found');
+    const branch = truck?.branch?.toString() || (user.role === 'super_admin' ? (user as any).selectedBranch : user.branch);
+    if (!branch) throw new ForbiddenException('Select a branch before recording a shop sale');
+    if (truck && user.role !== 'super_admin' && branch !== user.branch) throw new ForbiddenException('Truck belongs to another branch');
     await assertDayOpen(this.closingModel, branch, dto.date);
-    await this.truckLoadsService.assertTripOpen(truckId, dto.date);
+    if (truckId) await this.truckLoadsService.assertTripOpen(truckId, dto.date);
 
     const { built, totalAmount } = this.buildItems(dto.items);
-    const end = new Date(); end.setHours(23, 59, 59, 999);
-    const epoch = new Date('2000-01-01');
-    const [loaded, alreadySold, wasted] = await Promise.all([
-      this.truckLoadsService.sumBySizeInRange(epoch, end, branch, truckId),
-      this.sumBySizeInRange(epoch, end, truckId, branch),
-      this.wastageService.sumBySizeInRange(epoch, end, truckId, branch),
-    ]);
-    const requested: Record<string, number> = {};
-    for (const item of built) requested[item.size] = (requested[item.size] || 0) + item.quantity;
-    for (const [size, quantity] of Object.entries(requested)) {
-      const available = (loaded[size] || 0) - (alreadySold[size] || 0) - (wasted[size] || 0);
-      if (quantity > available) throw new BadRequestException(`Only ${available} bar(s) of size ${size} available in this truck`);
+    if (truckId) {
+      const end = new Date(); end.setHours(23, 59, 59, 999);
+      const epoch = new Date('2000-01-01');
+      const [loaded, alreadySold, wasted] = await Promise.all([
+        this.truckLoadsService.sumBySizeInRange(epoch, end, branch, truckId),
+        this.sumBySizeInRange(epoch, end, truckId, branch),
+        this.wastageService.sumBySizeInRange(epoch, end, truckId, branch),
+      ]);
+      const requested: Record<string, number> = {};
+      for (const item of built) requested[item.size] = (requested[item.size] || 0) + item.quantity;
+      for (const [size, quantity] of Object.entries(requested)) {
+        const available = (loaded[size] || 0) - (alreadySold[size] || 0) - (wasted[size] || 0);
+        if (quantity > available) throw new BadRequestException(`Only ${available} bar(s) of size ${size} available in this truck`);
+      }
     }
     const balanceAmount = totalAmount - dto.paidAmount;
 
@@ -115,12 +118,19 @@ export class SalesService {
     if (filters.paymentStatus === 'partial') query.balanceAmount = { $gt: 0, $lt: '$totalAmount' as any };
     if (filters.paymentStatus === 'unpaid') query.$expr = { $eq: ['$balanceAmount', '$totalAmount'] };
 
-    return this.saleModel
+    const sales = await this.saleModel
       .find(query)
       .populate('truck', 'truckName truckNumber')
       .populate('customer', 'name phoneNumber address defaultSaleType creditBalance truck createdAt')
       .sort({ date: -1, createdAt: -1 })
       .exec();
+
+    // Keep a direct name in the response for clients that render a compact
+    // sale card, while retaining the populated customer object for details.
+    return sales.map((sale) => ({
+      ...sale.toObject(),
+      customerName: (sale.customer as any)?.name || '',
+    }));
   }
 
   async findOne(id: string, user: AuthUser) {
@@ -128,7 +138,7 @@ export class SalesService {
     if (user.role !== 'super_admin') query.branch = user.branch;
     const sale = await this.saleModel.findOne(query).populate('truck customer').exec();
     if (!sale) throw new NotFoundException('Sale not found');
-    if (user.role === 'truck' && sale.truck._id.toString() !== user.truck) {
+    if (user.role === 'truck' && (!sale.truck || (sale.truck as any)._id.toString() !== user.truck)) {
       throw new ForbiddenException('Not allowed to view this sale');
     }
     return sale;
@@ -149,15 +159,17 @@ export class SalesService {
     const { built, totalAmount } = this.buildItems(dto.items);
     const balanceAmount = totalAmount - dto.paidAmount;
 
-    const truck = await this.truckModel.findById(dto.truck).exec();
-    if (!truck) throw new NotFoundException('Truck not found');
-    if (user.role !== 'super_admin' && truck.branch?.toString() !== user.branch) throw new ForbiddenException('Truck belongs to another branch');
+    const truck = dto.truck ? await this.truckModel.findById(dto.truck).exec() : null;
+    if (dto.truck && !truck) throw new NotFoundException('Truck not found');
+    const branch = truck?.branch?.toString() || (user.role === 'super_admin' ? (user as any).selectedBranch : user.branch);
+    if (!branch) throw new ForbiddenException('Select a branch before saving a shop sale');
+    if (truck && user.role !== 'super_admin' && truck.branch?.toString() !== user.branch) throw new ForbiddenException('Truck belongs to another branch');
     const updated = await this.saleModel.findOneAndUpdate(
       { _id: id, ...(user.role === 'super_admin' ? {} : { branch: user.branch }) },
       {
         date: new Date(dto.date),
-        branch: truck.branch,
-        truck: dto.truck,
+        branch,
+        truck: dto.truck || null,
         customer: dto.customer,
         saleType: dto.saleType,
         items: built,
@@ -182,8 +194,8 @@ export class SalesService {
     const sale = await this.saleModel.findOne({ _id: id, ...(user.role === 'super_admin' ? {} : { branch: user.branch }) });
     if (!sale) throw new NotFoundException('Sale not found');
     await assertDayOpen(this.closingModel, sale.branch.toString(), dto.date);
-    await this.truckLoadsService.assertTripOpen(sale.truck.toString(), dto.date);
-    if (user.role === 'truck' && sale.truck.toString() !== user.truck) {
+    if (sale.truck) await this.truckLoadsService.assertTripOpen(sale.truck.toString(), dto.date);
+    if (user.role === 'truck' && (!sale.truck || sale.truck.toString() !== user.truck)) {
       throw new ForbiddenException('Not allowed to update this sale payment');
     }
 
@@ -245,7 +257,7 @@ export class SalesService {
   }
 
   async sumByTruckInRange(from: Date, to: Date, branchId?: string) {
-    const sales = await this.saleModel.find({ date: { $gte: from, $lte: to }, ...(branchId ? { branch: branchId } : {}) }).populate('truck', 'truckName truckNumber').exec();
+    const sales = await this.saleModel.find({ date: { $gte: from, $lte: to }, truck: { $ne: null }, ...(branchId ? { branch: branchId } : {}) }).populate('truck', 'truckName truckNumber').exec();
     const totals: Record<string, { truckName: string; totalAmount: number; quantity: number }> = {};
     for (const sale of sales) {
       const key = sale.truck._id.toString();

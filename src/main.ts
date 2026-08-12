@@ -3,9 +3,6 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { json, urlencoded, type NextFunction, type Request, type Response } from 'express';
 import { AppModule } from './app.module';
-import { setServers } from 'node:dns';
-
-setServers(['1.1.1.1', '8.8.8.8']);
 const API_PREFIX = 'api';
 const DEFAULT_PORT = 4000;
 const DEFAULT_BODY_LIMIT = '1mb';

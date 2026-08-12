@@ -52,6 +52,14 @@ export class ReportsService {
     };
   }
 
+  async monthlySales(month: string, user?: any) {
+    const selected = /^\d{4}-\d{2}$/.test(month || '') ? month : new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date());
+    const [year, monthNumber] = selected.split('-').map(Number);
+    const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+    const totals = await this.profitLoss({ from: `${selected}-01`, to: `${selected}-${String(lastDay).padStart(2, '0')}` }, user);
+    return { month: selected, ...totals };
+  }
+
   async truckWise(filters: ReportRangeFilters, user?: any) {
     const { from, to } = this.range(filters);
     return this.salesService.sumByTruckInRange(from, to, this.branch(user));
