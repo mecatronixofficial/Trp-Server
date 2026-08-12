@@ -3,17 +3,15 @@
  * Creates the default admin account defined in .env (SEED_ADMIN_USERNAME / SEED_ADMIN_PASSWORD).
  */
 import 'dotenv/config';
-import { setServers } from 'node:dns';
 import * as mongoose from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { UserSchema } from './users/schemas/user.schema';
 import { Role } from './common/enums';
-
-setServers(['1.1.1.1', '8.8.8.8']);
+import { getMongoUri } from './config/mongo-uri';
 
 async function seed() {
-  const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/tiruppur_ice';
-  await mongoose.connect(uri);
+  const uri = getMongoUri();
+  await mongoose.connect(uri, { family: 4 });
 
   const UserModel = mongoose.model('User', UserSchema);
 

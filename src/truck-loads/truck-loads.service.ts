@@ -76,9 +76,10 @@ export class TruckLoadsService {
     const branch = user.role === 'super_admin' ? user.selectedBranch : user.branch;
     if (user.role === 'truck') truckId = user.truck;
     const match: any = { date: { $gte: from, $lte: to }, ...(branch ? { branch } : {}), ...(truckId ? { truck: truckId } : {}) };
+    const salesMatch = { ...match, truck: truckId || { $ne: null } };
     const [loads, sales, wastages, expenses] = await Promise.all([
       this.loadModel.find(match).populate('truck', 'truckName truckNumber driverName'),
-      this.saleModel.find(match), this.wastageModel.find(match), this.expenseModel.find(match),
+      this.saleModel.find(salesMatch), this.wastageModel.find(match), this.expenseModel.find(match),
     ]);
     const rows: Record<string, any> = {};
     const ensure = (id: string, truck?: any) => rows[id] ||= { truckId: id, truck, date, taken: 0, sold: 0, returned: 0, wastage: 0, remaining: 0, salesAmount: 0, collectedAmount: 0, pendingAmount: 0, driverAmount: 0, driverClosed: false, driverClosedAt: null, checked: false, checkedAt: null };

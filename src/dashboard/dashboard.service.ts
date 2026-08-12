@@ -10,20 +10,26 @@ import { TruckLoadsService } from '../truck-loads/truck-loads.service';
 import { TrucksService } from '../trucks/trucks.service';
 
 function startOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+  const key = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  return new Date(`${key}T00:00:00.000+05:30`);
 }
 function endOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
+  const key = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  return new Date(`${key}T23:59:59.999+05:30`);
 }
 function startOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
+  const key = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(d);
+  return new Date(`${key}-01T00:00:00.000+05:30`);
 }
 function startOfYear(d: Date) {
-  return new Date(d.getFullYear(), 0, 1);
+  const year = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Kolkata', year: 'numeric' }).format(d);
+  return new Date(`${year}-01-01T00:00:00.000+05:30`);
+}
+function indiaDateKey(d: Date) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+}
+function indiaDayOfMonth(d: Date) {
+  return Number(new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric' }).format(d));
 }
 
 @Injectable()
@@ -122,9 +128,31 @@ export class DashboardService {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
       const sum = await this.salesService.sumInRange(startOfDay(d), endOfDay(d), undefined, branch);
-      days.push({ date: d.toISOString().slice(0, 10), total: sum.totalAmount });
+      // Use the IST calendar date, not toISOString() (which is UTC and can land
+      // on the wrong day for requests made in the early hours IST).
+      days.push({ date: indiaDateKey(d), total: sum.totalAmount });
     }
     return days;
+  }
+
+  /**
+   * Daily sales series for the "Today Sales Report" graph.
+   * - weekly: the last 7 IST calendar days (today inclusive).
+   * - monthly: every day of the current IST month, from the 1st through today.
+   */
+  async getSalesTrend(range: 'weekly' | 'monthly' = 'weekly', branch?: string) {
+    const now = new Date();
+    const spanDays = range === 'monthly' ? indiaDayOfMonth(now) : 7;
+    const days: { date: string; total: number; count: number }[] = [];
+    for (let i = spanDays - 1; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const sum = await this.salesService.sumInRange(startOfDay(d), endOfDay(d), undefined, branch);
+      days.push({ date: indiaDateKey(d), total: sum.totalAmount, count: sum.count });
+    }
+    const totalAmount = days.reduce((sum, day) => sum + day.total, 0);
+    const totalSales = days.reduce((sum, day) => sum + day.count, 0);
+    return { range, days, totalAmount, totalSales, averagePerDay: days.length ? totalAmount / days.length : 0 };
   }
 
   async getMonthlyProfitChart(months = 6, branch?: string) {

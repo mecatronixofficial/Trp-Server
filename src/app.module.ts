@@ -22,6 +22,7 @@ import { TruckLoadsModule } from './truck-loads/truck-loads.module';
 import { TruckAssignmentsModule } from './truck-assignments/truck-assignments.module';
 import { DriverExpensesModule } from './driver-expenses/driver-expenses.module';
 import { DailyClosingModule } from './daily-closing/daily-closing.module';
+import { getMongoUri } from './config/mongo-uri';
 
 @Module({
   imports: [
@@ -30,7 +31,14 @@ import { DailyClosingModule } from './daily-closing/daily-closing.module';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        uri: config.get<string>('MONGO_URI'),
+        uri: getMongoUri({
+          ...process.env,
+          MONGO_URI: config.get<string>('MONGO_URI'),
+          MONGO_DIRECT_HOSTS: config.get<string>('MONGO_DIRECT_HOSTS'),
+          MONGO_REPLICA_SET: config.get<string>('MONGO_REPLICA_SET'),
+          MONGO_AUTH_SOURCE: config.get<string>('MONGO_AUTH_SOURCE'),
+        }),
+        family: 4,
       }),
     }),
     AuthModule,

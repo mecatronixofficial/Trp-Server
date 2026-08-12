@@ -17,9 +17,9 @@ export class CreateSaleDto {
   @IsDateString()
   date: string;
 
-  // Admin can create a sale for any truck; truck users are forced to their own truck server-side.
-  @IsMongoId()
-  truck: string;
+  // A truck is required for driver sales, but admin shop sales do not use one.
+  @IsOptional() @IsMongoId()
+  truck?: string;
 
   @IsMongoId()
   customer: string;

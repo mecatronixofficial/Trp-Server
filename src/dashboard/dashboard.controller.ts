@@ -23,6 +23,13 @@ export class DashboardController {
     return this.dashboardService.getMonthlyProfitChart(months ? Number(months) : 6, user?.role === Role.ADMIN ? user.branch : user?.selectedBranch || undefined);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @Get('sales-trend')
+  getSalesTrend(@CurrentUser() user: any, @Query('range') range?: string) {
+    const branch = user?.role === Role.ADMIN ? user.branch : user?.selectedBranch || undefined;
+    return this.dashboardService.getSalesTrend(range === 'monthly' ? 'monthly' : 'weekly', branch);
+  }
+
   @Roles(Role.TRUCK)
   @Get('truck')
   getTruck(@CurrentUser() user: any) {

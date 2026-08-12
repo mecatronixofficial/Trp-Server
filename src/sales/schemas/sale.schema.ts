@@ -45,8 +45,10 @@ export class Sale {
   @Prop({ required: true })
   date: Date;
 
-  @Prop({ type: Types.ObjectId, ref: 'Truck', required: true })
-  truck: Types.ObjectId;
+  // Shop sales have no truck. Truck sales continue to reference the truck
+  // that supplied the bars.
+  @Prop({ type: Types.ObjectId, ref: 'Truck', required: false, default: null })
+  truck?: Types.ObjectId | null;
 
   @Prop({ type: Types.ObjectId, ref: 'Customer', required: true })
   customer: Types.ObjectId;

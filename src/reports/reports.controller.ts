@@ -17,6 +17,11 @@ export class ReportsController {
     return this.reportsService.profitLoss({ from, to, truck }, user);
   }
 
+  @Get('monthly-sales')
+  monthlySales(@CurrentUser() user: any, @Query('month') month: string) {
+    return this.reportsService.monthlySales(month, user);
+  }
+
   @Get('truck-wise')
   truckWise(@CurrentUser() user: any, @Query('from') from: string, @Query('to') to: string) {
     return this.reportsService.truckWise({ from, to }, user);
