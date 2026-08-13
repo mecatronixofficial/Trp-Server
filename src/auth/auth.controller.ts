@@ -55,14 +55,17 @@ export class AuthController {
     return { user };
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('logout')
-  logout(@Res({ passthrough: true }) res: Response) {
+  async logout(@CurrentUser() user: any, @Res({ passthrough: true }) res: Response) {
     const nodeEnv = this.config.get<string>('NODE_ENV') || 'development';
     const cookieName = this.config.get<string>('JWT_COOKIE_NAME') || 'tii_token';
     const cookieDomain = this.config.get<string>('COOKIE_DOMAIN');
     const cookieSecure = this.config.get<string>('COOKIE_SECURE') === 'true' || nodeEnv === 'production';
     const cookieSameSite = (this.config.get<'lax' | 'strict' | 'none'>('COOKIE_SAME_SITE') ||
       (cookieSecure ? 'none' : 'lax')) as 'lax' | 'strict' | 'none';
+
+    const result = await this.authService.logout(user);
 
     res.clearCookie(cookieName, {
       httpOnly: true,
@@ -72,7 +75,13 @@ export class AuthController {
       path: '/',
     });
 
-    return { success: true };
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('presence')
+  presence(@CurrentUser() user: any) {
+    return this.authService.markPresent(user);
   }
 
   @Post('admin/forgot-password')

@@ -39,8 +39,8 @@ export class StockEntryService {
     return this.stockEntryModel.find(query).sort({ date: -1, createdAt: -1 }).exec();
   }
 
-  async totalInRange(from: Date, to: Date, branch: string) {
-    const rows = await this.stockEntryModel.find({ branch, date: { $gte: from, $lte: to } });
+  async totalInRange(from: Date, to: Date, branch: string, createdAfter?: Date | null) {
+    const rows = await this.stockEntryModel.find({ branch, date: { $gte: from, $lte: to }, ...(createdAfter ? { createdAt: { $gte: createdAfter } } : {}) });
     return rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
   }
 

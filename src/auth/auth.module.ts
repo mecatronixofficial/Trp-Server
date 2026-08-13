@@ -9,6 +9,7 @@ import { UsersModule } from '../users/users.module';
 import { SettingsModule } from '../settings/settings.module';
 import { MailModule } from '../mail/mail.module';
 import { MessagingModule } from '../messaging/messaging.module';
+import { TruckLoadsModule } from '../truck-loads/truck-loads.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { MessagingModule } from '../messaging/messaging.module';
     SettingsModule,
     MailModule,
     MessagingModule,
+    TruckLoadsModule,
     PassportModule,
     ConfigModule,
     JwtModule.registerAsync({

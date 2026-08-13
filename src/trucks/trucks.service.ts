@@ -56,9 +56,21 @@ export class TrucksService {
     return truck;
   }
 
-  findAll(actor: any) {
+  async findAll(actor: any) {
     const filter = actor.role === Role.SUPER_ADMIN ? (actor.selectedBranch ? { branch: actor.selectedBranch } : {}) : { branch: actor.branch };
-    return this.truckModel.find(filter).populate('branch', 'name code').sort({ createdAt: -1 }).exec();
+    const trucks = await this.truckModel.find(filter).populate('branch', 'name code').sort({ createdAt: -1 }).exec();
+    const presenceRows: any[] = await this.usersService.findTruckPresence(trucks.map((truck) => truck._id.toString()));
+    const presence = new Map(presenceRows.map((row) => [String(row.truck), row]));
+    const onlineCutoff = Date.now() - 90_000;
+    return trucks.map((truck) => {
+      const row: any = presence.get(truck._id.toString());
+      const lastSeenAt = row?.lastSeenAt ? new Date(row.lastSeenAt) : null;
+      return {
+        ...truck.toObject(),
+        isOnline: Boolean(row?.isOnline && lastSeenAt && lastSeenAt.getTime() >= onlineCutoff),
+        lastSeenAt,
+      };
+    });
   }
 
   async findOne(id: string, actor?: any) {
@@ -68,6 +80,19 @@ export class TrucksService {
     const truck = await this.truckModel.findOne(filter).exec();
     if (!truck) throw new NotFoundException('Truck not found');
     return truck;
+  }
+
+  async assertOnline(id: string) {
+    const [presence]: any[] = await this.usersService.findTruckPresence([id]);
+    const lastSeenAt = presence?.lastSeenAt ? new Date(presence.lastSeenAt) : null;
+    const online = Boolean(
+      presence?.isOnline &&
+      lastSeenAt &&
+      lastSeenAt.getTime() >= Date.now() - 90_000,
+    );
+    if (!online) {
+      throw new BadRequestException('This truck is Offline. The driver must login before Admin can assign ice bars.');
+    }
   }
 
   async update(id: string, dto: UpdateTruckDto, actor?: any) {

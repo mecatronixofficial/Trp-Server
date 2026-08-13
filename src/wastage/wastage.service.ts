@@ -28,7 +28,10 @@ export class WastageService {
     const branch = user.role === 'super_admin' ? user.selectedBranch : user.branch;
     if (!branch) throw new BadRequestException('Select a branch before adding wastage');
     await assertDayOpen(this.closingModel, branch, dto.date);
-    if (truck) await this.truckLoads.assertTripOpen(truck, dto.date);
+    if (truck) {
+      await this.truckLoads.assertTripOpen(truck, dto.date);
+      await this.truckLoads.assertTruckBalance(user, truck, dto.date, Number(dto.quantity || 0));
+    }
     return this.wastageModel.create({ ...dto, branch, date: new Date(dto.date), truck });
   }
 
@@ -54,9 +57,16 @@ export class WastageService {
   async update(id: string, dto: UpdateWastageDto, user: AuthUser) {
     if (!['admin', 'super_admin'].includes(user.role)) throw new ForbiddenException('Only admin can edit wastage entries');
     const branch = user.role === 'super_admin' ? user.selectedBranch : user.branch;
-    const w = await this.wastageModel.findOneAndUpdate({ _id: id, ...(branch ? { branch } : {}) }, { ...dto, date: new Date(dto.date) }, { new: true });
-    if (!w) throw new NotFoundException('Wastage record not found');
-    return w;
+    const existing = await this.wastageModel.findOne({ _id: id, ...(branch ? { branch } : {}) });
+    if (!existing) throw new NotFoundException('Wastage record not found');
+    const recordBranch = existing.branch.toString();
+    const truck = dto.truck || null;
+    await assertDayOpen(this.closingModel, recordBranch, dto.date);
+    if (truck) {
+      await this.truckLoads.assertTripOpen(truck, dto.date);
+      await this.truckLoads.assertTruckBalance(user, truck, dto.date, Number(dto.quantity || 0), { wastageId: id });
+    }
+    return this.wastageModel.findByIdAndUpdate(id, { ...dto, branch: recordBranch, truck, date: new Date(dto.date) }, { new: true });
   }
 
   async remove(id: string, user: AuthUser) {
