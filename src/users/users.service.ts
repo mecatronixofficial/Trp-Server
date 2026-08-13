@@ -59,6 +59,23 @@ export class UsersService {
     return this.userModel.findByIdAndUpdate(userId, { isActive }, { new: true });
   }
 
+  async setPresence(userId: string, isOnline: boolean) {
+    return this.userModel.findByIdAndUpdate(
+      userId,
+      { isOnline, lastSeenAt: new Date() },
+      { new: true },
+    );
+  }
+
+  async findTruckPresence(truckIds: string[]) {
+    if (!truckIds.length) return [];
+    return this.userModel
+      .find({ role: Role.TRUCK, truck: { $in: truckIds } })
+      .select('truck isOnline lastSeenAt')
+      .lean()
+      .exec();
+  }
+
   async validatePassword(plain: string, hash: string) {
     return bcrypt.compare(plain, hash);
   }

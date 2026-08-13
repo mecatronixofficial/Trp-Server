@@ -6,3 +6,8 @@ export class UpsertTruckAssignmentDto {
   @IsNumber() @Min(0) quantity: number;
   @IsOptional() @IsString() notes?: string;
 }
+
+export class RejectTruckAssignmentDto {
+  @IsString()
+  reason: string;
+}

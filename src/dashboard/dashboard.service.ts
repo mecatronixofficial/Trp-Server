@@ -8,6 +8,9 @@ import { CustomersService } from '../customers/customers.service';
 import { WorkersService } from '../workers/workers.service';
 import { TruckLoadsService } from '../truck-loads/truck-loads.service';
 import { TrucksService } from '../trucks/trucks.service';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { DailyClosing, DailyClosingDocument } from '../daily-closing/schemas/daily-closing.schema';
 
 function startOfDay(d: Date) {
   const key = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
@@ -44,6 +47,7 @@ export class DashboardService {
     private workersService: WorkersService,
     private truckLoadsService: TruckLoadsService,
     private trucksService: TrucksService,
+    @InjectModel(DailyClosing.name) private dailyClosingModel: Model<DailyClosingDocument>,
   ) {}
 
   async getAdminDashboard(user?: any) {
@@ -68,6 +72,7 @@ export class DashboardService {
       truckCustomerSummary,
       recentCustomers,
       workerBuyingToday,
+      todayClosings,
     ] = await Promise.all([
       this.productionService.sumBySizeInRange(todayStart, todayEnd, branch),
       this.salesService.sumInRange(todayStart, todayEnd, undefined, branch),
@@ -84,19 +89,30 @@ export class DashboardService {
       this.customersService.getTruckCustomerSummary(branch),
       this.customersService.getRecentCustomers(8, branch),
       this.workersService.totalBuyingInRange(todayStart, todayEnd, branch),
+      this.dailyClosingModel.find({ date: indiaDateKey(now), ...(branch ? { branch } : {}) }),
     ]);
 
-    const todayProductionTotal = Object.values(productionBySize).reduce((s, v) => s + v, 0);
+    const closingReturnedTotal = todayClosings.reduce(
+      (sum, closing) => sum + Number(closing.returnedTotal ?? closing.returned ?? 0),
+      0,
+    );
+    const effectiveReturnedTotal = Math.max(Number(returnedTotal || 0), closingReturnedTotal);
+    const rawProductionTotal = Object.values(productionBySize).reduce((s, v) => s + v, 0);
+    const todayProductionTotal = Math.max(0, rawProductionTotal - effectiveReturnedTotal);
+    const finalizedProductionBySize = {
+      ...productionBySize,
+      '1': Math.max(0, Number(productionBySize['1'] || 0) - effectiveReturnedTotal),
+    };
     const todayProfit = salesToday.totalAmount - makingCostToday;
 
     return {
       today: {
         production: todayProductionTotal,
-        productionBySize,
+        productionBySize: finalizedProductionBySize,
         sales: salesToday.totalAmount,
         salesCount: salesToday.count,
         wastage: wastageTotal,
-        returned: returnedTotal,
+        returned: effectiveReturnedTotal,
         makingCost: makingCostToday,
         workerBuying: workerBuyingToday,
         profit: todayProfit,

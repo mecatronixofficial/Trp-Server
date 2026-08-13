@@ -25,6 +25,12 @@ export class User {
   @Prop({ default: true })
   isActive: boolean;
 
+  @Prop({ default: false })
+  isOnline: boolean;
+
+  @Prop({ default: null })
+  lastSeenAt: Date | null;
+
   @Prop({ default: null })
   displayName: string;
 

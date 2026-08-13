@@ -69,6 +69,12 @@ export class SalesService {
         const available = (loaded[size] || 0) - (alreadySold[size] || 0) - (wasted[size] || 0);
         if (quantity > available) throw new BadRequestException(`Only ${available} bar(s) of size ${size} available in this truck`);
       }
+      await this.truckLoadsService.assertTruckBalance(
+        user,
+        truckId,
+        dto.date,
+        built.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+      );
     } else {
       const requested: Record<string, number> = {};
       for (const item of built) requested[item.size] = (requested[item.size] || 0) + item.quantity;
@@ -167,6 +173,17 @@ export class SalesService {
     const branch = truck?.branch?.toString() || (user.role === 'super_admin' ? (user as any).selectedBranch : user.branch);
     if (!branch) throw new ForbiddenException('Select a branch before saving a shop sale');
     if (truck && user.role !== 'super_admin' && truck.branch?.toString() !== user.branch) throw new ForbiddenException('Truck belongs to another branch');
+    await assertDayOpen(this.closingModel, branch, dto.date);
+    if (dto.truck) {
+      await this.truckLoadsService.assertTripOpen(dto.truck, dto.date);
+      await this.truckLoadsService.assertTruckBalance(
+        user,
+        dto.truck,
+        dto.date,
+        built.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+        { saleId: id },
+      );
+    }
     const session = await this.connection.startSession();
     try {
       let updated: SaleDocument | null = null;

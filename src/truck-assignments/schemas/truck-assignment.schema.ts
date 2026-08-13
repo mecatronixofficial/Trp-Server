@@ -17,6 +17,18 @@ export class TruckAssignment {
   @Prop({ required: true, min: 0 })
   quantity: number;
 
+  @Prop({ default: 0, min: 0 })
+  pendingQuantity: number;
+
+  @Prop({ enum: ['pending', 'accepted', 'rejected'], default: 'accepted' })
+  status: 'pending' | 'accepted' | 'rejected';
+
+  @Prop({ default: '' })
+  responseReason: string;
+
+  @Prop({ default: null })
+  respondedAt: Date | null;
+
   @Prop({ default: '' })
   notes: string;
 

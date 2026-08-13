@@ -11,6 +11,17 @@ export class DailyClosing {
   @Prop({ default: 0 }) returned: number;
   @Prop({ default: 0 }) wastage: number;
   @Prop({ default: 0 }) closingBalance: number;
+  @Prop({ default: null }) closingBox: number | null;
+  @Prop({ default: null }) nextOpeningBox: number | null;
+  @Prop({ default: 0 }) closingBoxes: number;
+  @Prop({ default: 2 }) barsPerBox: number;
+  @Prop({ default: null }) boxCursorAt: Date | null;
+  @Prop({ default: null }) sessionStartedAt: Date | null;
+  @Prop({ default: 0 }) sessionProducedBaseline: number;
+  @Prop({ default: 0 }) sessionSoldBaseline: number;
+  @Prop({ default: 0 }) sessionWastageBaseline: number;
+  @Prop({ default: 0 }) returnedTotal: number;
+  @Prop({ default: 0 }) lastSessionReturned: number;
   @Prop({ default: 0 }) sellingAmount: number;
   @Prop({ default: 0 }) makingCost: number;
   @Prop({ default: 0 }) profit: number;

@@ -6,6 +6,8 @@ import { UsersService } from '../users/users.service';
 import { SettingsService } from '../settings/settings.service';
 import { MailService } from '../mail/mail.service';
 import { MessagingService } from '../messaging/messaging.service';
+import { Role } from '../common/enums';
+import { TruckLoadsService } from '../truck-loads/truck-loads.service';
 
 type ResetMethod = 'email' | 'mobile' | 'whatsapp';
 
@@ -17,6 +19,7 @@ export class AuthService {
     private settingsService: SettingsService,
     private mailService: MailService,
     private messagingService: MessagingService,
+    private truckLoadsService: TruckLoadsService,
   ) {}
 
   async login(username: string, password: string) {
@@ -26,6 +29,7 @@ export class AuthService {
 
     const valid = await this.usersService.validatePassword(password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Invalid username or password');
+    if (user.role === Role.TRUCK) await this.usersService.setPresence(user._id.toString(), true);
 
     const payload = {
       sub: user._id.toString(),
@@ -46,6 +50,20 @@ export class AuthService {
         branch: user.branch,
       },
     };
+  }
+
+  async markPresent(user: any) {
+    if (user?.role !== Role.TRUCK) return { online: false };
+    await this.usersService.setPresence(String(user.sub || user.id), true);
+    return { online: true };
+  }
+
+  async logout(user: any) {
+    if (user?.role === Role.TRUCK) {
+      await this.truckLoadsService.assertCanLogout(user);
+      await this.usersService.setPresence(String(user.sub || user.id), false);
+    }
+    return { success: true };
   }
 
   async requestAdminPasswordReset(method: ResetMethod) {
