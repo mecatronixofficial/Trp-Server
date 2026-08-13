@@ -6,6 +6,7 @@ import { CreateWastageDto, UpdateWastageDto } from './dto/wastage.dto';
 import { DailyClosing, DailyClosingDocument } from '../daily-closing/schemas/daily-closing.schema';
 import { assertDayOpen } from '../daily-closing/closing-lock';
 import { TruckLoadsService } from '../truck-loads/truck-loads.service';
+import { indiaDayEnd, indiaDayStart } from '../common/india-date';
 
 interface AuthUser {
   userId: string;
@@ -44,8 +45,8 @@ export class WastageService {
     if (filters.size) query.size = filters.size;
     if (filters.from || filters.to) {
       query.date = {};
-      if (filters.from) query.date.$gte = new Date(filters.from);
-      if (filters.to) query.date.$lte = new Date(filters.to);
+      if (filters.from) query.date.$gte = indiaDayStart(filters.from);
+      if (filters.to) query.date.$lte = indiaDayEnd(filters.to);
     }
     return this.wastageModel.find(query).populate('truck', 'truckName truckNumber').sort({ date: -1 }).exec();
   }

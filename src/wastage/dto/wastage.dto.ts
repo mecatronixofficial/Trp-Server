@@ -11,7 +11,7 @@ export class CreateWastageDto {
   @IsEnum(IceBarSize)
   size: IceBarSize;
 
-  @IsNumber() @Min(1)
+  @IsNumber() @Min(0.25)
   quantity: number;
 
   @IsEnum(WastageReason)

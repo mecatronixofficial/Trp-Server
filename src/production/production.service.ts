@@ -7,6 +7,7 @@ import { DailyClosing, DailyClosingDocument } from '../daily-closing/schemas/dai
 import { assertDayOpen } from '../daily-closing/closing-lock';
 import { SettingsService } from '../settings/settings.service';
 import { IceBarSize } from '../common/enums';
+import { indiaDayEnd, indiaDayStart } from '../common/india-date';
 
 @Injectable()
 export class ProductionService {
@@ -64,8 +65,8 @@ export class ProductionService {
     const branch = this.branch(user); if (branch) query.branch = branch;
     if (from || to) {
       query.date = {};
-      if (from) query.date.$gte = new Date(from);
-      if (to) query.date.$lte = new Date(to);
+      if (from) query.date.$gte = indiaDayStart(from);
+      if (to) query.date.$lte = indiaDayEnd(to);
     }
     return this.productionModel.find(query).sort({ date: -1 }).exec();
   }

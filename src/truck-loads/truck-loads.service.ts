@@ -10,10 +10,39 @@ import { DailyClosing, DailyClosingDocument } from '../daily-closing/schemas/dai
 import { assertDayOpen } from '../daily-closing/closing-lock';
 import { DriverExpense, DriverExpenseDocument } from '../driver-expenses/schemas/driver-expense.schema';
 import { BadRequestException } from '@nestjs/common';
+import { ProductionService } from '../production/production.service';
+import { StockEntryService } from '../stock-entry/stock-entry.service';
+import { OutsourceEntryService } from '../outsource-entry/outsource-entry.service';
+import { indiaDayEnd, indiaDayStart } from '../common/india-date';
 
 @Injectable()
 export class TruckLoadsService {
-  constructor(@InjectModel(TruckLoad.name) private loadModel: Model<TruckLoadDocument>, @InjectModel(Sale.name) private saleModel: Model<SaleDocument>, @InjectModel(Wastage.name) private wastageModel: Model<WastageDocument>, @InjectModel(DailyClosing.name) private closingModel: Model<DailyClosingDocument>, @InjectModel(DriverExpense.name) private expenseModel: Model<DriverExpenseDocument>, private trucksService: TrucksService) {}
+  constructor(@InjectModel(TruckLoad.name) private loadModel: Model<TruckLoadDocument>, @InjectModel(Sale.name) private saleModel: Model<SaleDocument>, @InjectModel(Wastage.name) private wastageModel: Model<WastageDocument>, @InjectModel(DailyClosing.name) private closingModel: Model<DailyClosingDocument>, @InjectModel(DriverExpense.name) private expenseModel: Model<DriverExpenseDocument>, private trucksService: TrucksService, private productionService: ProductionService, private stockEntryService: StockEntryService, private outsourceEntryService: OutsourceEntryService) {}
+
+  async assertShopStock(branch: string, date: string | Date, requested: Record<string, number>) {
+    const { from, to } = this.dateBounds(date);
+    const [produced, loads, shopSales, factoryWastage, stocked, outsourced] = await Promise.all([
+      this.productionService.sumBySizeInRange(from, to, branch),
+      this.sumBySizeInRange(from, to, branch),
+      this.saleModel.find({ branch, truck: null, date: { $gte: from, $lte: to } }),
+      this.wastageModel.find({ branch, truck: null, reason: { $ne: 'unsold' }, date: { $gte: from, $lte: to } }),
+      this.stockEntryService.totalInRange(from, to, branch),
+      this.outsourceEntryService.totalInRange(from, to, branch),
+    ]);
+    const sold: Record<string, number> = {};
+    const wasted: Record<string, number> = {};
+    for (const sale of shopSales) for (const item of sale.items) sold[item.size] = (sold[item.size] || 0) + Number(item.quantity || 0);
+    for (const row of factoryWastage) wasted[row.size] = (wasted[row.size] || 0) + Number(row.quantity || 0);
+    for (const [size, quantity] of Object.entries(requested)) {
+      const available = (produced[size] || 0) + (size === '1' ? outsourced - stocked : 0) - (wasted[size] || 0) - (loads[size] || 0) - (sold[size] || 0);
+      if (quantity > available + 0.0001) {
+        const remaining = Math.max(available, 0);
+        throw new BadRequestException(
+          `Only ${remaining} bar(s) remaining. The entered ${quantity} bar(s) is higher than the available balance.`,
+        );
+      }
+    }
+  }
 
   async create(dto: CreateTruckLoadDto, user: any) {
     const truckId = user.role === 'truck' ? user.truck : dto.truck;
@@ -21,12 +50,16 @@ export class TruckLoadsService {
     const truck = await this.trucksService.findOne(truckId, user);
     await assertDayOpen(this.closingModel, truck.branch.toString(), dto.date);
     await this.assertTripOpen(truckId, dto.date);
+    await this.assertShopStock(truck.branch.toString(), dto.date, { [dto.size || '1']: dto.quantity });
     return this.loadModel.create({ ...dto, truck: truckId, branch: truck.branch, date: new Date(dto.date), size: dto.size || '1' });
   }
 
   async upsertAssignedLoad(truckId: string, branch: string, date: string, quantity: number, notes?: string) {
     await this.assertTripOpen(truckId, date);
     const { from } = this.dateBounds(date);
+    const existing = await this.loadModel.findOne({ truck: truckId, branch, date: from });
+    const additionalQuantity = Math.max(quantity - Number(existing?.quantity || 0), 0);
+    if (additionalQuantity) await this.assertShopStock(branch, date, { '1': additionalQuantity });
     return this.loadModel.findOneAndUpdate(
       { truck: truckId, branch, date: from },
       { truck: truckId, branch, date: from, size: '1', quantity, notes: notes || '' },
@@ -36,6 +69,7 @@ export class TruckLoadsService {
 
   async createAssignedLoad(truckId: string, branch: string, date: string, quantity: number, notes?: string) {
     await this.assertTripOpen(truckId, date);
+    await this.assertShopStock(branch, date, { '1': quantity });
     const { from } = this.dateBounds(date);
     return this.loadModel.create({
       truck: truckId,
@@ -53,7 +87,7 @@ export class TruckLoadsService {
     if (branch) query.branch = branch;
     if (user.role === 'truck') query.truck = user.truck;
     else if (truck) query.truck = truck;
-    if (from || to) { query.date = {}; if (from) query.date.$gte = new Date(from); if (to) query.date.$lte = new Date(`${to}T23:59:59.999Z`); }
+    if (from || to) { query.date = {}; if (from) query.date.$gte = indiaDayStart(from); if (to) query.date.$lte = indiaDayEnd(to); }
     return this.loadModel.find(query).populate('truck', 'truckName truckNumber driverName').sort({ date: -1, createdAt: -1 }).exec();
   }
 

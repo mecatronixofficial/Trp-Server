@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { MakingCost, MakingCostDocument } from './schemas/making-cost.schema';
 import { CreateMakingCostDto, UpdateMakingCostDto } from './dto/making-cost.dto';
+import { indiaDayEnd, indiaDayStart } from '../common/india-date';
 
 @Injectable()
 export class MakingCostService {
@@ -18,8 +19,8 @@ export class MakingCostService {
     const branch = this.branch(user); if (branch) query.branch = branch;
     if (from || to) {
       query.date = {};
-      if (from) query.date.$gte = new Date(from);
-      if (to) query.date.$lte = new Date(to);
+      if (from) query.date.$gte = indiaDayStart(from);
+      if (to) query.date.$lte = indiaDayEnd(to);
     }
     return this.costModel.find(query).sort({ date: -1 }).exec();
   }

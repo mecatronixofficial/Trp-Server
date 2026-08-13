@@ -20,6 +20,12 @@ export class BranchesService {
     if (await this.branchModel.exists({ code: dto.code.trim().toUpperCase() })) {
       throw new BadRequestException('Branch code is already in use');
     }
+    if (await this.branchModel.exists({ name: { $regex: `^${this.escapeRegex(dto.name.trim())}$`, $options: 'i' } })) {
+      throw new BadRequestException('Branch name is already in use');
+    }
+    if (dto.phoneNumber && await this.branchModel.exists({ phoneNumber: dto.phoneNumber.trim() })) {
+      throw new BadRequestException('Phone number is already in use');
+    }
 
     let branch: BranchDocument;
     try {
@@ -56,6 +62,16 @@ export class BranchesService {
   }
 
   async update(id: string, dto: UpdateBranchDto) {
+    const existing = await this.branchModel.findById(id);
+    if (!existing) throw new NotFoundException('Branch not found');
+    if (dto.name && dto.name.trim().toLowerCase() !== existing.name.trim().toLowerCase()) {
+      const duplicateName = await this.branchModel.exists({ _id: { $ne: id }, name: { $regex: `^${this.escapeRegex(dto.name.trim())}$`, $options: 'i' } });
+      if (duplicateName) throw new BadRequestException('Branch name is already in use');
+    }
+    if (dto.phoneNumber !== undefined && dto.phoneNumber.trim() !== (existing.phoneNumber || '').trim()) {
+      const duplicatePhone = dto.phoneNumber.trim() && await this.branchModel.exists({ _id: { $ne: id }, phoneNumber: dto.phoneNumber.trim() });
+      if (duplicatePhone) throw new BadRequestException('Phone number is already in use');
+    }
     const branch = await this.branchModel.findByIdAndUpdate(id, dto, { new: true });
     if (!branch) throw new NotFoundException('Branch not found');
     if (dto.isActive !== undefined) {
@@ -110,5 +126,9 @@ export class BranchesService {
       admin: admin ? { id: admin._id, username: admin.username, displayName: admin.displayName, isActive: admin.isActive } : null,
       admins: admins.map((item: any) => ({ id: item._id, username: item.username, displayName: item.displayName, isActive: item.isActive })),
     };
+  }
+
+  private escapeRegex(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }

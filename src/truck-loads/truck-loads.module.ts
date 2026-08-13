@@ -8,6 +8,9 @@ import { DailyClosing, DailyClosingSchema } from '../daily-closing/schemas/daily
 import { DriverExpense, DriverExpenseSchema } from '../driver-expenses/schemas/driver-expense.schema';
 import { TruckLoadsController } from './truck-loads.controller';
 import { TruckLoadsService } from './truck-loads.service';
+import { ProductionModule } from '../production/production.module';
+import { StockEntryModule } from '../stock-entry/stock-entry.module';
+import { OutsourceEntryModule } from '../outsource-entry/outsource-entry.module';
 
-@Module({ imports: [MongooseModule.forFeature([{ name: TruckLoad.name, schema: TruckLoadSchema }, { name: Sale.name, schema: SaleSchema }, { name: Wastage.name, schema: WastageSchema }, { name: DailyClosing.name, schema: DailyClosingSchema }, { name: DriverExpense.name, schema: DriverExpenseSchema }]), TrucksModule], controllers: [TruckLoadsController], providers: [TruckLoadsService], exports: [TruckLoadsService] })
+@Module({ imports: [MongooseModule.forFeature([{ name: TruckLoad.name, schema: TruckLoadSchema }, { name: Sale.name, schema: SaleSchema }, { name: Wastage.name, schema: WastageSchema }, { name: DailyClosing.name, schema: DailyClosingSchema }, { name: DriverExpense.name, schema: DriverExpenseSchema }]), TrucksModule, ProductionModule, StockEntryModule, OutsourceEntryModule], controllers: [TruckLoadsController], providers: [TruckLoadsService], exports: [TruckLoadsService] })
 export class TruckLoadsModule {}

@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Connection, Model } from 'mongoose';
+import { InjectConnection } from '@nestjs/mongoose';
 import { Sale, SaleDocument } from './schemas/sale.schema';
 import { AddSalePaymentDto, CreateSaleDto, UpdateSaleDto } from './dto/sale.dto';
 import { CustomersService } from '../customers/customers.service';
@@ -9,6 +10,7 @@ import { TruckLoadsService } from '../truck-loads/truck-loads.service';
 import { WastageService } from '../wastage/wastage.service';
 import { DailyClosing, DailyClosingDocument } from '../daily-closing/schemas/daily-closing.schema';
 import { assertDayOpen } from '../daily-closing/closing-lock';
+import { indiaDayEnd, indiaDayStart } from '../common/india-date';
 
 interface AuthUser {
   userId: string;
@@ -26,6 +28,7 @@ export class SalesService {
     private truckLoadsService: TruckLoadsService,
     private wastageService: WastageService,
     @InjectModel(DailyClosing.name) private closingModel: Model<DailyClosingDocument>,
+    @InjectConnection() private connection: Connection,
   ) {}
 
   private buildItems(items: { size: string; quantity: number; pricePerBar: number }[]) {
@@ -66,6 +69,10 @@ export class SalesService {
         const available = (loaded[size] || 0) - (alreadySold[size] || 0) - (wasted[size] || 0);
         if (quantity > available) throw new BadRequestException(`Only ${available} bar(s) of size ${size} available in this truck`);
       }
+    } else {
+      const requested: Record<string, number> = {};
+      for (const item of built) requested[item.size] = (requested[item.size] || 0) + item.quantity;
+      await this.truckLoadsService.assertShopStock(branch, dto.date, requested);
     }
     const balanceAmount = totalAmount - dto.paidAmount;
 
@@ -111,8 +118,8 @@ export class SalesService {
     if (filters.saleType) query.saleType = filters.saleType;
     if (filters.from || filters.to) {
       query.date = {};
-      if (filters.from) query.date.$gte = new Date(filters.from);
-      if (filters.to) query.date.$lte = new Date(filters.to);
+      if (filters.from) query.date.$gte = indiaDayStart(filters.from);
+      if (filters.to) query.date.$lte = indiaDayEnd(filters.to);
     }
     if (filters.paymentStatus === 'paid') query.balanceAmount = 0;
     if (filters.paymentStatus === 'partial') query.balanceAmount = { $gt: 0, $lt: '$totalAmount' as any };
@@ -151,43 +158,32 @@ export class SalesService {
     const existing = await this.saleModel.findOne({ _id: id, ...(user.role === 'super_admin' ? {} : { branch: user.branch }) });
     if (!existing) throw new NotFoundException('Sale not found');
 
-    // reverse old credit impact before applying new one
-    if (existing.balanceAmount > 0) {
-      await this.customersService.adjustCreditBalance(existing.customer.toString(), -existing.balanceAmount);
-    }
-
     const { built, totalAmount } = this.buildItems(dto.items);
     const balanceAmount = totalAmount - dto.paidAmount;
+    if (balanceAmount < 0) throw new BadRequestException('Paid amount cannot be greater than the sale total');
 
     const truck = dto.truck ? await this.truckModel.findById(dto.truck).exec() : null;
     if (dto.truck && !truck) throw new NotFoundException('Truck not found');
     const branch = truck?.branch?.toString() || (user.role === 'super_admin' ? (user as any).selectedBranch : user.branch);
     if (!branch) throw new ForbiddenException('Select a branch before saving a shop sale');
     if (truck && user.role !== 'super_admin' && truck.branch?.toString() !== user.branch) throw new ForbiddenException('Truck belongs to another branch');
-    const updated = await this.saleModel.findOneAndUpdate(
-      { _id: id, ...(user.role === 'super_admin' ? {} : { branch: user.branch }) },
-      {
-        date: new Date(dto.date),
-        branch,
-        truck: dto.truck || null,
-        customer: dto.customer,
-        saleType: dto.saleType,
-        items: built,
-        totalAmount,
-        paymentMode: dto.paymentMode,
-        paidAmount: dto.paidAmount,
-        balanceAmount,
-        notes: dto.notes || '',
-        edited: true,
-      },
-      { new: true },
-    );
-
-    if (balanceAmount > 0) {
-      await this.customersService.adjustCreditBalance(dto.customer, balanceAmount);
+    const session = await this.connection.startSession();
+    try {
+      let updated: SaleDocument | null = null;
+      await session.withTransaction(async () => {
+        updated = await this.saleModel.findOneAndUpdate(
+          { _id: id, ...(user.role === 'super_admin' ? {} : { branch: user.branch }) },
+          { date: new Date(dto.date), branch, truck: dto.truck || null, customer: dto.customer, saleType: dto.saleType, items: built, totalAmount, paymentMode: dto.paymentMode, paidAmount: dto.paidAmount, balanceAmount, notes: dto.notes || '', edited: true },
+          { new: true, session },
+        );
+        if (!updated) throw new NotFoundException('Sale not found');
+        if (existing.balanceAmount > 0) await this.customersService.adjustCreditBalance(existing.customer.toString(), -existing.balanceAmount, session);
+        if (balanceAmount > 0) await this.customersService.adjustCreditBalance(dto.customer, balanceAmount, session);
+      });
+      return updated;
+    } finally {
+      await session.endSession();
     }
-
-    return updated;
   }
 
   async addPayment(id: string, dto: AddSalePaymentDto, user: AuthUser) {
@@ -242,9 +238,10 @@ export class SalesService {
     return { totalAmount, totalPaid, totalBalance, count: sales.length };
   }
 
-  async sumBySizeInRange(from: Date, to: Date, truckId?: string, branchId?: string) {
+  async sumBySizeInRange(from: Date, to: Date, truckId?: string, branchId?: string, shopOnly = false) {
     const query: any = { date: { $gte: from, $lte: to } };
-    if (truckId) query.truck = truckId;
+    if (shopOnly) query.truck = null;
+    else if (truckId) query.truck = truckId;
     if (branchId) query.branch = branchId;
     const sales = await this.saleModel.find(query).exec();
     const totals: Record<string, number> = {};
@@ -260,6 +257,11 @@ export class SalesService {
     const sales = await this.saleModel.find({ date: { $gte: from, $lte: to }, truck: { $ne: null }, ...(branchId ? { branch: branchId } : {}) }).populate('truck', 'truckName truckNumber').exec();
     const totals: Record<string, { truckName: string; totalAmount: number; quantity: number }> = {};
     for (const sale of sales) {
+      // The `truck` field can still hold an id whose document was later
+      // deleted (trucks.service#remove does not block or cascade), which
+      // makes populate() resolve it to null — skip those instead of
+      // crashing the whole report on sale.truck._id.
+      if (!sale.truck) continue;
       const key = sale.truck._id.toString();
       if (!totals[key]) totals[key] = { truckName: (sale.truck as any).truckName, totalAmount: 0, quantity: 0 };
       totals[key].totalAmount += sale.totalAmount;
@@ -272,6 +274,10 @@ export class SalesService {
     const sales = await this.saleModel.find({ date: { $gte: from, $lte: to }, ...(branchId ? { branch: branchId } : {}) }).populate('customer', 'name').exec();
     const totals: Record<string, { customerName: string; totalAmount: number; quantity: number }> = {};
     for (const sale of sales) {
+      // Same dangling-reference risk as truck above: customers.service#remove
+      // never checks for existing sales before deleting, so a deleted
+      // customer's old sales populate to null here.
+      if (!sale.customer) continue;
       const key = sale.customer._id.toString();
       if (!totals[key]) totals[key] = { customerName: (sale.customer as any).name, totalAmount: 0, quantity: 0 };
       totals[key].totalAmount += sale.totalAmount;
