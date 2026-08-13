@@ -81,8 +81,8 @@ export class DashboardService {
       this.getLast7DaysSales(branch),
       this.salesService.getPendingPayments(8, branch),
       this.salesService.getRecentPayments(todayStart, todayEnd, 8, branch),
-      this.customersService.getTruckCustomerSummary(),
-      this.customersService.getRecentCustomers(8),
+      this.customersService.getTruckCustomerSummary(branch),
+      this.customersService.getRecentCustomers(8, branch),
       this.workersService.totalBuyingInRange(todayStart, todayEnd, branch),
     ]);
 
@@ -153,6 +153,38 @@ export class DashboardService {
     const totalAmount = days.reduce((sum, day) => sum + day.total, 0);
     const totalSales = days.reduce((sum, day) => sum + day.count, 0);
     return { range, days, totalAmount, totalSales, averagePerDay: days.length ? totalAmount / days.length : 0 };
+  }
+
+  /**
+   * Same idea as getSalesTrend, but scoped to one truck's own sales — powers
+   * the driver dashboard's Trip tab trend chart.
+   * - weekly: the last 7 IST calendar days (today inclusive).
+   * - monthly: every day of the current IST month, from the 1st through today.
+   */
+  async getTruckSalesTrend(truckId: string, range: 'weekly' | 'monthly' = 'weekly') {
+    const now = new Date();
+    const spanDays = range === 'monthly' ? indiaDayOfMonth(now) : 7;
+    const dayDates = Array.from({ length: spanDays }, (_, idx) => {
+      const d = new Date(now);
+      d.setDate(d.getDate() - (spanDays - 1 - idx));
+      return d;
+    });
+
+    const days = await Promise.all(
+      dayDates.map(async (d) => {
+        const [sum, sizeWise] = await Promise.all([
+          this.salesService.sumInRange(startOfDay(d), endOfDay(d), truckId),
+          this.salesService.sumBySizeInRange(startOfDay(d), endOfDay(d), truckId),
+        ]);
+        const quantity = Object.values(sizeWise).reduce((s, v) => s + v, 0);
+        return { date: indiaDateKey(d), total: sum.totalAmount, quantity, count: sum.count };
+      }),
+    );
+
+    const totalAmount = days.reduce((sum, day) => sum + day.total, 0);
+    const totalQuantity = days.reduce((sum, day) => sum + day.quantity, 0);
+    const totalSales = days.reduce((sum, day) => sum + day.count, 0);
+    return { range, days, totalAmount, totalQuantity, totalSales, averagePerDay: days.length ? totalAmount / days.length : 0 };
   }
 
   async getMonthlyProfitChart(months = 6, branch?: string) {

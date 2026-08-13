@@ -31,9 +31,10 @@ export class StockService {
     const endOfDay = new Date(asOfDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const [production, loaded, wastage, returned] = await Promise.all([
+    const [production, loaded, shopSales, wastage, returned] = await Promise.all([
       this.productionService.sumBySizeInRange(EPOCH, endOfDay, branch),
       this.truckLoadsService.sumBySizeInRange(EPOCH, endOfDay, branch),
+      this.salesService.sumBySizeInRange(EPOCH, endOfDay, undefined, branch, true),
       this.wastageService.sumBySizeInRange(EPOCH, endOfDay, undefined, branch, true),
       this.wastageService.sumBySizeInRange(EPOCH, endOfDay, undefined, branch, false, 'unsold'),
     ]);
@@ -41,8 +42,9 @@ export class StockService {
     const sizeWise = ICE_BAR_SIZES.map((size) => {
       const produced = production[size] || 0;
       const picked = loaded[size] || 0;
+      const sold = shopSales[size] || 0;
       const wasted = wastage[size] || 0;
-      return { size, quantity: produced - picked - wasted + (returned[size] || 0) };
+      return { size, quantity: produced - picked - sold - wasted + (returned[size] || 0) };
     });
 
     const totalClosingStock = sizeWise.reduce((s, r) => s + r.quantity, 0);

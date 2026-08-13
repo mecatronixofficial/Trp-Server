@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { ClientSession, Model } from 'mongoose';
 import { Customer, CustomerDocument } from './schemas/customer.schema';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
 
@@ -8,6 +8,8 @@ interface AuthUser {
   userId: string;
   role: string;
   truck: string | null;
+  branch?: string | null;
+  selectedBranch?: string | null;
 }
 
 @Injectable()
@@ -18,10 +20,11 @@ export class CustomersService {
     const truck = user?.role === 'truck' ? user.truck : dto.truck || null;
     const customerType = user?.role === 'truck' ? 'truck' : dto.customerType || (truck ? 'truck' : 'local');
     if (customerType === 'truck' && !truck) throw new BadRequestException('Select a truck for a truck customer');
-    return this.customerModel.create({ ...dto, customerType, truck: customerType === 'local' ? null : truck });
+    const branch = user?.role === 'super_admin' ? user.selectedBranch : user?.branch;
+    return this.customerModel.create({ ...dto, branch, customerType, truck: customerType === 'local' ? null : truck });
   }
 
-  findAll(search?: string, user?: AuthUser) {
+  async findAll(search?: string, user?: AuthUser) {
     const query: any = {};
     const and: any[] = [];
 
@@ -37,7 +40,9 @@ export class CustomersService {
 
     if (and.length) query.$and = and;
 
-    return this.customerModel.find(query).populate('truck', 'truckName truckNumber driverName').sort({ name: 1 }).exec();
+    const branch = user?.role === 'super_admin' ? user.selectedBranch : user?.branch;
+    if (branch) query.branch = branch;
+    return this.customerModel.find(query).populate('truck', 'truckName truckNumber driverName branch').sort({ name: 1 }).exec();
   }
 
   async findOne(id: string, user?: AuthUser) {
@@ -63,16 +68,16 @@ export class CustomersService {
     return { deleted: true };
   }
 
-  async adjustCreditBalance(id: string, delta: number) {
+  async adjustCreditBalance(id: string, delta: number, session?: ClientSession) {
     return this.customerModel.findByIdAndUpdate(
       id,
       { $inc: { creditBalance: delta } },
-      { new: true },
+      { new: true, session },
     );
   }
 
-  async getTruckCustomerSummary() {
-    const customers = await this.customerModel.find().populate('truck', 'truckName truckNumber driverName').exec();
+  async getTruckCustomerSummary(branch?: string) {
+    const customers = await this.customerModel.find(branch ? { branch } : {}).populate('truck', 'truckName truckNumber driverName').exec();
     const summary: Record<string, { truckName: string; truckNumber?: string; customers: number; dueCustomers: number; creditBalance: number }> = {};
 
     for (const customer of customers) {
@@ -95,9 +100,9 @@ export class CustomersService {
     return summary;
   }
 
-  async getRecentCustomers(limit = 8) {
+  async getRecentCustomers(limit = 8, branch?: string) {
     return this.customerModel
-      .find()
+      .find(branch ? { branch } : {})
       .populate('truck', 'truckName truckNumber driverName')
       .sort({ createdAt: -1 })
       .limit(limit)

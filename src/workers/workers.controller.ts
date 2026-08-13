@@ -61,8 +61,8 @@ export class WorkersController {
   }
 
   @Get('buying')
-  findBuying(@CurrentUser() user: any, @Query('from') from?: string, @Query('to') to?: string, @Query('worker') worker?: string, @Query('branch') branch?: string) {
-    return this.workersService.findAttendance(from, to, worker, user, branch);
+  findBuying(@CurrentUser() user: any, @Query('from') from?: string, @Query('to') to?: string, @Query('worker') worker?: string, @Query('branch') branch?: string, @Query('limit') limit?: string) {
+    return this.workersService.findAttendance(from, to, worker, user, branch, limit);
   }
 
   @Patch('attendance/:id')

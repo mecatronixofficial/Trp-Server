@@ -17,9 +17,9 @@ export class BranchesController {
   @Post(':id/admins') createAdmin(@Param('id') id: string, @Body() dto: CreateBranchAdminDto) { return this.branchesService.createAdmin(id, dto); }
   @Patch('admins/:adminId/status') setAdminStatus(@Param('adminId') adminId: string, @Body() dto: { isActive: boolean }) { return this.branchesService.setAdminStatus(adminId, dto.isActive); }
   @Patch('admins/:adminId/reset-password') resetSpecificPassword(@Param('adminId') adminId: string, @Body() dto: ResetBranchAdminPasswordDto) { return this.branchesService.resetSpecificAdminPassword(adminId, dto.newPassword); }
-  @Patch(':id') update(@Param('id') id: string, @Body() dto: UpdateBranchDto) { return this.branchesService.update(id, dto); }
   @Patch(':id/admin/reset-password')
   resetPassword(@Param('id') id: string, @Body() dto: ResetBranchAdminPasswordDto) {
     return this.branchesService.resetAdminPassword(id, dto.newPassword);
   }
+  @Patch(':id') update(@Param('id') id: string, @Body() dto: UpdateBranchDto) { return this.branchesService.update(id, dto); }
 }

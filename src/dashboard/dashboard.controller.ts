@@ -35,4 +35,10 @@ export class DashboardController {
   getTruck(@CurrentUser() user: any) {
     return this.dashboardService.getTruckDashboard(user.truck, user);
   }
+
+  @Roles(Role.TRUCK)
+  @Get('truck/trend')
+  getTruckTrend(@CurrentUser() user: any, @Query('range') range?: string) {
+    return this.dashboardService.getTruckSalesTrend(user.truck, range === 'monthly' ? 'monthly' : 'weekly');
+  }
 }

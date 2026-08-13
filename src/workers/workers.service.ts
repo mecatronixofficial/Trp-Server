@@ -11,6 +11,7 @@ import {
 } from './dto/worker.dto';
 import { Worker, WorkerDocument } from './schemas/worker.schema';
 import { WorkerAttendance, WorkerAttendanceDocument, WorkerAttendanceStatus } from './schemas/worker-attendance.schema';
+import { indiaDayEnd, indiaDayStart } from '../common/india-date';
 
 @Injectable()
 export class WorkersService {
@@ -94,7 +95,7 @@ export class WorkersService {
     return this.createAttendance({ ...dto, status: WorkerAttendanceStatus.PRESENT }, user);
   }
 
-  async findAttendance(from: string | undefined, to: string | undefined, worker: string | undefined, user: any, requestedBranch?: string) {
+  async findAttendance(from: string | undefined, to: string | undefined, worker: string | undefined, user: any, requestedBranch?: string, limit?: string) {
     const query: any = {};
     const branch = this.branchFor(user, requestedBranch);
     if (branch) query.branch = branch;
@@ -104,7 +105,14 @@ export class WorkersService {
       if (from) query.date.$gte = this.dayStart(from);
       if (to) query.date.$lte = this.dayEnd(to);
     }
-    return this.attendanceModel.find(query).populate('worker').sort({ date: -1 }).exec();
+    const requestedLimit = Math.min(Math.max(Number(limit) || 0, 0), 100);
+    let recordQuery = this.attendanceModel.find(query).populate('worker').sort({ date: -1, updatedAt: -1 });
+    if (requestedLimit) recordQuery = recordQuery.limit(requestedLimit);
+    const records = await recordQuery.exec();
+    return records.map((record: any) => ({
+      ...record.toObject(),
+      entryDateTime: record.updatedAt || record.createdAt || record.date,
+    }));
   }
 
   async updateAttendance(id: string, dto: UpdateWorkerAttendanceDto, user: any) {
@@ -167,10 +175,10 @@ export class WorkersService {
   }
 
   private dayStart(date: string) {
-    return new Date(`${date.slice(0, 10)}T00:00:00.000Z`);
+    return indiaDayStart(date.slice(0, 10));
   }
 
   private dayEnd(date: string) {
-    return new Date(`${date.slice(0, 10)}T23:59:59.999Z`);
+    return indiaDayEnd(date.slice(0, 10));
   }
 }

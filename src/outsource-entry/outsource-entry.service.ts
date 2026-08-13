@@ -5,6 +5,7 @@ import { OutsourceEntry, OutsourceEntryDocument } from './schemas/outsource-entr
 import { CreateOutsourceEntryDto, UpdateOutsourceEntryDto } from './dto/outsource-entry.dto';
 import { DailyClosing, DailyClosingDocument } from '../daily-closing/schemas/daily-closing.schema';
 import { assertDayOpen } from '../daily-closing/closing-lock';
+import { indiaDayEnd, indiaDayStart } from '../common/india-date';
 
 @Injectable()
 export class OutsourceEntryService {
@@ -32,10 +33,15 @@ export class OutsourceEntryService {
     const branch = this.branch(user); if (branch) query.branch = branch;
     if (from || to) {
       query.date = {};
-      if (from) query.date.$gte = new Date(from);
-      if (to) query.date.$lte = new Date(to);
+      if (from) query.date.$gte = indiaDayStart(from);
+      if (to) query.date.$lte = indiaDayEnd(to);
     }
     return this.outsourceEntryModel.find(query).sort({ date: -1, createdAt: -1 }).exec();
+  }
+
+  async totalInRange(from: Date, to: Date, branch: string) {
+    const rows = await this.outsourceEntryModel.find({ branch, date: { $gte: from, $lte: to } });
+    return rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
   }
 
   async update(id: string, dto: UpdateOutsourceEntryDto, user: any) {

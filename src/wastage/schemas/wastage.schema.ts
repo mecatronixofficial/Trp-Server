@@ -17,7 +17,7 @@ export class Wastage {
   @Prop({ enum: IceBarSize, required: true })
   size: IceBarSize;
 
-  @Prop({ required: true, min: 1 })
+  @Prop({ required: true, min: 0.25 })
   quantity: number;
 
   @Prop({ enum: WastageReason, required: true })
