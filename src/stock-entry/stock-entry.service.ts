@@ -7,6 +7,8 @@ import { DailyClosing, DailyClosingDocument } from '../daily-closing/schemas/dai
 import { assertDayOpen } from '../daily-closing/closing-lock';
 import { indiaDayEnd, indiaDayStart } from '../common/india-date';
 
+const AUTOMATIC_CLOSING_NOTE = 'Automatically moved from ready bars at day closing';
+
 @Injectable()
 export class StockEntryService {
   constructor(
@@ -42,6 +44,45 @@ export class StockEntryService {
   async totalInRange(from: Date, to: Date, branch: string, createdAfter?: Date | null) {
     const rows = await this.stockEntryModel.find({ branch, date: { $gte: from, $lte: to }, ...(createdAfter ? { createdAt: { $gte: createdAfter } } : {}) });
     return rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+  }
+
+  async latestBefore(date: Date, branch: string) {
+    const latest = await this.stockEntryModel.findOne({ branch, date: { $lt: date } }).sort({ date: -1, createdAt: -1 });
+    if (!latest) return null;
+    const day = new Date(latest.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const dayStart = indiaDayStart(day);
+    const dayEnd = indiaDayEnd(day);
+    return { day, total: await this.totalInRange(dayStart, dayEnd, branch) };
+  }
+
+  async latestTotalBefore(date: Date, branch: string) {
+    return (await this.latestBefore(date, branch))?.total || 0;
+  }
+
+  async recordClosingStock(branch: string, date: string, totalStock: number) {
+    const from = indiaDayStart(date);
+    const to = indiaDayEnd(date);
+    const rows = await this.stockEntryModel.find({ branch, date: { $gte: from, $lte: to } });
+    const automatic = rows.find((row) => row.notes === AUTOMATIC_CLOSING_NOTE);
+    const manuallyMoved = rows
+      .filter((row) => row.notes !== AUTOMATIC_CLOSING_NOTE)
+      .reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+    const quantity = Math.max(0, Math.round((Number(totalStock || 0) - manuallyMoved) * 100) / 100);
+
+    if (quantity < 0.0001) {
+      if (automatic) await this.stockEntryModel.deleteOne({ _id: automatic._id });
+      return null;
+    }
+    if (automatic) {
+      automatic.quantity = quantity;
+      return automatic.save();
+    }
+    return this.stockEntryModel.create({
+      branch,
+      date: new Date(date),
+      quantity,
+      notes: AUTOMATIC_CLOSING_NOTE,
+    });
   }
 
   async update(id: string, dto: UpdateStockEntryDto, user: any) {

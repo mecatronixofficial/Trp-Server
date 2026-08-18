@@ -97,4 +97,26 @@ export class UsersService {
   async deleteBranchUsers(branchId: string) {
     return this.userModel.deleteMany({ branch: branchId });
   }
+
+  async deleteUser(userId: string) {
+    return this.userModel.deleteOne({ _id: userId });
+  }
+
+  async updateProfile(userId: string, dto: { displayName?: string; phoneNumber?: string; email?: string }) {
+    const update: Record<string, string> = {};
+    if (dto.displayName !== undefined) update.displayName = dto.displayName.trim();
+    if (dto.phoneNumber !== undefined) update.phoneNumber = dto.phoneNumber.trim();
+    if (dto.email !== undefined) update.email = dto.email.trim();
+    return this.userModel.findByIdAndUpdate(userId, update, { new: true }).select('-passwordHash -resetOtpHash');
+  }
+
+  async changeOwnPassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) return null;
+    const valid = await this.validatePassword(currentPassword, user.passwordHash);
+    if (!valid) return 'invalid';
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    await user.save();
+    return 'ok';
+  }
 }

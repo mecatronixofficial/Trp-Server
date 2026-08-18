@@ -35,6 +35,12 @@ export class User {
   displayName: string;
 
   @Prop({ default: null })
+  phoneNumber: string | null;
+
+  @Prop({ default: null })
+  email: string | null;
+
+  @Prop({ default: null })
   resetOtpHash: string | null;
 
   @Prop({ default: null })

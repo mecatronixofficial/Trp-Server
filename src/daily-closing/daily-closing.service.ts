@@ -10,12 +10,14 @@ import { MessagingService } from '../messaging/messaging.service';
 import { DailyClosing, DailyClosingDocument } from './schemas/daily-closing.schema';
 import { MakingCostService } from '../making-cost/making-cost.service';
 import { TruckLoadsService } from '../truck-loads/truck-loads.service';
+import { StockEntryService } from '../stock-entry/stock-entry.service';
+import { totalBarQuantity } from '../common/bar-quantity';
 
 @Injectable()
 export class DailyClosingService implements OnModuleInit, OnModuleDestroy {
   private timer?: NodeJS.Timeout;
   private logger = new Logger(DailyClosingService.name);
-  constructor(@InjectModel(DailyClosing.name) private model: Model<DailyClosingDocument>, @InjectModel(Branch.name) private branchModel: Model<BranchDocument>, private production: ProductionService, private sales: SalesService, private wastage: WastageService, private costs: MakingCostService, private truckLoads: TruckLoadsService, private settings: SettingsService, private messaging: MessagingService) {}
+  constructor(@InjectModel(DailyClosing.name) private model: Model<DailyClosingDocument>, @InjectModel(Branch.name) private branchModel: Model<BranchDocument>, private production: ProductionService, private sales: SalesService, private wastage: WastageService, private costs: MakingCostService, private truckLoads: TruckLoadsService, private stockEntries: StockEntryService, private settings: SettingsService, private messaging: MessagingService) {}
   onModuleInit() { this.timer = setInterval(() => this.checkOverdueClosings().catch((e) => this.logger.error(e)), 5 * 60 * 1000); this.timer.unref(); setTimeout(() => this.checkOverdueClosings().catch((e) => this.logger.error(e)), 5000); }
   onModuleDestroy() { if (this.timer) clearInterval(this.timer); }
   private bounds(date: string) { return { from: new Date(`${date}T00:00:00.000+05:30`), to: new Date(`${date}T23:59:59.999+05:30`) }; }
@@ -23,19 +25,33 @@ export class DailyClosingService implements OnModuleInit, OnModuleDestroy {
   async calculate(branch: string, date: string) {
     const { from, to } = this.bounds(date);
     const previous = await this.model.findOne({ branch, date: { $lt: date }, status: 'closed' }).sort({ date: -1 });
-    const [producedBySize, soldBySize, saleTotals, returned, wasted, makingCost] = await Promise.all([
+    const [producedBySize, soldBySize, saleTotals, returned, wasted, makingCost, latestStock, latestProductionDay, current] = await Promise.all([
       this.production.sumBySizeInRange(from, to, branch), this.sales.sumBySizeInRange(from, to, undefined, branch),
       this.sales.sumInRange(from, to, undefined, branch), this.wastage.totalInRange(from, to, undefined, branch, 'unsold'), this.wastage.totalInRange(from, to, undefined, branch, undefined, 'unsold'), this.costs.totalInRange(from, to, branch),
+      this.stockEntries.latestBefore(from, branch),
+      this.production.latestDayBefore(from, branch),
+      this.model.findOne({ branch, date }),
     ]);
-    const produced = Object.values(producedBySize).reduce((s, v) => s + v, 0);
-    const sold = Object.values(soldBySize).reduce((s, v) => s + v, 0);
+    const produced = totalBarQuantity(Object.entries(producedBySize).map(([size, quantity]) => ({ size, quantity })));
+    const sold = totalBarQuantity(Object.entries(soldBySize).map(([size, quantity]) => ({ size, quantity })));
+    // A same-day reopen carries forward what this branch just returned at its
+    // last close today (stored on the row itself). latestBefore() only sees
+    // stock entries dated strictly before today, so it can never see that
+    // same-day return and must not be used once one exists.
+    const sameDayReturn = Math.max(0, Number(current?.returnedTotal ?? current?.returned ?? 0));
     // Legacy records could contain a negative closing balance after truck/shop
     // reconciliation. A new production day must always start from valid stock.
-    const openingBalance = Math.max(0, Number(previous?.closingBalance || 0));
+    const carryIn = sameDayReturn > 0
+      ? sameDayReturn
+      : latestStock && (!latestProductionDay || latestStock.day >= latestProductionDay)
+        ? latestStock.total
+        : previous?.closingBalance || 0;
+    const openingBalance = produced > 0
+      ? Math.max(0, Number(carryIn))
+      : 0;
     let closingBalance = Math.max(0, openingBalance + produced - sold - wasted);
     let closingReturned = returned;
-    const current = await this.model.findOne({ branch, date });
-    closingReturned = Math.max(closingReturned, Number(current?.returnedTotal ?? current?.returned ?? 0));
+    closingReturned = Math.max(closingReturned, sameDayReturn);
     let boxFields: Record<string, any> = {};
     if (current?.status === 'closed') {
       closingBalance = 0;
@@ -48,11 +64,13 @@ export class DailyClosingService implements OnModuleInit, OnModuleDestroy {
         const totalBoxes = Math.max(1, Number(productionSettings.totalBoxes || 200));
         const sessionReturned = Math.max(0, Number(current.lastSessionReturned ?? closingReturned));
         const closingBoxes = Math.ceil(sessionReturned / barsPerBox);
-        const sessionSold = Math.max(0, Number(current.sold || 0) - Number(current.sessionSoldBaseline || 0));
+        // closingBox/closingBoxes are informational only; the next-production
+        // box cursor always continues right after the last box actually
+        // closed, regardless of whether this session's bars sold — see close().
         const closingBox = ((dayBoxes.lastBoxClose - closingBoxes + totalBoxes) % totalBoxes) + 1;
         boxFields = {
           closingBox,
-          nextOpeningBox: sessionSold <= 0 ? dayBoxes.firstBoxOpen : (closingBox >= totalBoxes ? 1 : closingBox + 1),
+          nextOpeningBox: dayBoxes.lastBoxClose >= totalBoxes ? 1 : dayBoxes.lastBoxClose + 1,
           closingBoxes,
           barsPerBox,
           boxCursorAt: current.boxCursorAt || current.closedAt || new Date(),
@@ -92,15 +110,26 @@ export class DailyClosingService implements OnModuleInit, OnModuleDestroy {
     const sessionProduced = Math.max(0, Number(row.produced || 0) - Number(row.sessionProducedBaseline || 0));
     const sessionSold = Math.max(0, Number(row.sold || 0) - Number(row.sessionSoldBaseline || 0));
     const sessionWastage = Math.max(0, Number(row.wastage || 0) - Number(row.sessionWastageBaseline || 0));
-    const returnedBars = Math.max(0, sessionProduced - sessionSold - sessionWastage);
+    // row.openingBalance already carries this session's true starting balance
+    // forward — calculate() folds the previous close's returnedTotal into it
+    // once one exists (see the sameDayReturn branch above) — so it must not
+    // be zeroed out for a 2nd+ session, and returnedTotal must not be added
+    // again below. Doing both used to silently re-add stock that had already
+    // been sold this session back into the new closing balance.
+    const sessionOpeningBalance = Math.max(0, Number(row.openingBalance || 0));
+    const returnedBars = Math.max(0, sessionOpeningBalance + sessionProduced - sessionSold - sessionWastage);
+    const totalReturnedStock = returnedBars;
+    await this.stockEntries.recordClosingStock(branch, date, totalReturnedStock);
     const closingBoxes = Math.ceil(returnedBars / barsPerBox);
     if (dayBoxes) {
-      // Returned boxes move the reusable box cursor backwards from the last
-      // production closing reading. Example: close 57, return 7 boxes => 51.
+      // closingBox/closingBoxes below are informational only (how many boxes'
+      // worth of bars came back unsold, for the closing report). The box
+      // *cursor* for the next production must not depend on whether today's
+      // bars sold — a box is "used" the moment it is opened in production,
+      // sold or not, so the next session always continues right after the
+      // last box actually closed.
       row.closingBox = ((dayBoxes.lastBoxClose - closingBoxes + totalBoxes) % totalBoxes) + 1;
-      row.nextOpeningBox = sessionSold <= 0
-        ? dayBoxes.firstBoxOpen
-        : (row.closingBox >= totalBoxes ? 1 : row.closingBox + 1);
+      row.nextOpeningBox = dayBoxes.lastBoxClose >= totalBoxes ? 1 : dayBoxes.lastBoxClose + 1;
       row.closingBoxes = closingBoxes;
       row.barsPerBox = barsPerBox;
       row.boxCursorAt = new Date();
@@ -109,7 +138,7 @@ export class DailyClosingService implements OnModuleInit, OnModuleDestroy {
       row.closingBalance = 0;
     }
     row.lastSessionReturned = returnedBars;
-    row.returnedTotal = Number(row.returnedTotal || 0) + returnedBars;
+    row.returnedTotal = totalReturnedStock;
     row.returned = row.returnedTotal;
     row.status = 'closed'; row.closedAt = new Date(); row.closedBy = user.userId; return row.save();
   }

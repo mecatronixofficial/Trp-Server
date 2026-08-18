@@ -12,9 +12,10 @@ import { TruckLoadsModule } from '../truck-loads/truck-loads.module';
 import { TrucksModule } from '../trucks/trucks.module';
 import { MongooseModule } from '@nestjs/mongoose';
 import { DailyClosing, DailyClosingSchema } from '../daily-closing/schemas/daily-closing.schema';
+import { StockEntryModule } from '../stock-entry/stock-entry.module';
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: DailyClosing.name, schema: DailyClosingSchema }]), ProductionModule, MakingCostModule, SalesModule, WastageModule, StockModule, CustomersModule, WorkersModule, TruckLoadsModule, TrucksModule],
+  imports: [MongooseModule.forFeature([{ name: DailyClosing.name, schema: DailyClosingSchema }]), ProductionModule, MakingCostModule, SalesModule, WastageModule, StockModule, StockEntryModule, CustomersModule, WorkersModule, TruckLoadsModule, TrucksModule],
   providers: [DashboardService],
   controllers: [DashboardController],
 })

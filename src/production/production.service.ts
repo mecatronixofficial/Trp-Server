@@ -130,6 +130,13 @@ export class ProductionService {
     };
   }
 
+  async latestDayBefore(date: Date, branch: string) {
+    const latest = await this.productionModel.findOne({ branch, date: { $lt: date } }).sort({ date: -1, createdAt: -1 });
+    return latest
+      ? new Date(latest.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+      : null;
+  }
+
   async update(id: string, dto: UpdateProductionDto, user?: any) {
     const branch = this.branch(user);
     await assertDayOpen(this.closingModel, branch, dto.date);
