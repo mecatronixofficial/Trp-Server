@@ -7,6 +7,7 @@ import { DailyClosing, DailyClosingDocument } from '../daily-closing/schemas/dai
 import { assertDayOpen } from '../daily-closing/closing-lock';
 import { TruckLoadsService } from '../truck-loads/truck-loads.service';
 import { indiaDayEnd, indiaDayStart } from '../common/india-date';
+import { barQuantity, totalBarQuantity } from '../common/bar-quantity';
 
 interface AuthUser {
   userId: string;
@@ -30,7 +31,7 @@ export class WastageService {
     await assertDayOpen(this.closingModel, branch, dto.date);
     if (truck) {
       await this.truckLoads.assertTripOpen(truck, dto.date);
-      await this.truckLoads.assertTruckBalance(user, truck, dto.date, Number(dto.quantity || 0));
+      await this.truckLoads.assertTruckBalance(user, truck, dto.date, barQuantity(dto));
     }
     return this.wastageModel.create({ ...dto, branch, date: new Date(dto.date), truck });
   }
@@ -64,7 +65,7 @@ export class WastageService {
     await assertDayOpen(this.closingModel, recordBranch, dto.date);
     if (truck) {
       await this.truckLoads.assertTripOpen(truck, dto.date);
-      await this.truckLoads.assertTruckBalance(user, truck, dto.date, Number(dto.quantity || 0), { wastageId: id });
+      await this.truckLoads.assertTruckBalance(user, truck, dto.date, barQuantity(dto), { wastageId: id });
     }
     return this.wastageModel.findByIdAndUpdate(id, { ...dto, branch: recordBranch, truck, date: new Date(dto.date) }, { new: true });
   }
@@ -96,6 +97,6 @@ export class WastageService {
     if (reason) query.reason = reason;
     if (excludeReason) query.reason = { $ne: excludeReason };
     const rows = await this.wastageModel.find(query).exec();
-    return rows.reduce((s, r) => s + r.quantity, 0);
+    return totalBarQuantity(rows);
   }
 }

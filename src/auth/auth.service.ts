@@ -52,6 +52,34 @@ export class AuthService {
     };
   }
 
+  async getProfile(userId: string) {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new UnauthorizedException('Account not found');
+    return {
+      id: user._id,
+      username: user.username,
+      role: user.role,
+      truck: user.truck,
+      branch: user.branch,
+      displayName: user.displayName,
+      phoneNumber: user.phoneNumber,
+      email: user.email,
+    };
+  }
+
+  async updateOwnProfile(userId: string, dto: { displayName?: string; phoneNumber?: string; email?: string }) {
+    const updated = await this.usersService.updateProfile(userId, dto);
+    if (!updated) throw new UnauthorizedException('Account not found');
+    return this.getProfile(userId);
+  }
+
+  async changeOwnPassword(userId: string, currentPassword: string, newPassword: string) {
+    const result = await this.usersService.changeOwnPassword(userId, currentPassword, newPassword);
+    if (result === null) throw new UnauthorizedException('Account not found');
+    if (result === 'invalid') throw new BadRequestException('Current password is incorrect');
+    return { success: true };
+  }
+
   async markPresent(user: any) {
     if (user?.role !== Role.TRUCK) return { online: false };
     await this.usersService.setPresence(String(user.sub || user.id), true);

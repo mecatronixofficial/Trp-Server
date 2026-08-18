@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { ChangeOwnPasswordDto, UpdateProfileDto } from './dto/profile.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 
@@ -99,6 +100,21 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Get('me')
   me(@CurrentUser() user: any) {
-    return user;
+    // The JWT payload only carries id/username/role/branch/truck; fetch the
+    // full record so displayName/phoneNumber/email survive a page refresh
+    // instead of only being present right after login.
+    return this.authService.getProfile(user.userId || user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me')
+  updateMe(@CurrentUser() user: any, @Body() dto: UpdateProfileDto) {
+    return this.authService.updateOwnProfile(user.userId || user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('me/change-password')
+  changeMyPassword(@CurrentUser() user: any, @Body() dto: ChangeOwnPasswordDto) {
+    return this.authService.changeOwnPassword(user.userId || user.id, dto.currentPassword, dto.newPassword);
   }
 }

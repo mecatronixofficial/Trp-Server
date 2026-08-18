@@ -11,6 +11,8 @@ import { TrucksService } from '../trucks/trucks.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { DailyClosing, DailyClosingDocument } from '../daily-closing/schemas/daily-closing.schema';
+import { totalBarQuantity } from '../common/bar-quantity';
+import { StockEntryService } from '../stock-entry/stock-entry.service';
 
 function startOfDay(d: Date) {
   const key = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
@@ -43,6 +45,7 @@ export class DashboardService {
     private salesService: SalesService,
     private wastageService: WastageService,
     private stockService: StockService,
+    private stockEntryService: StockEntryService,
     private customersService: CustomersService,
     private workersService: WorkersService,
     private truckLoadsService: TruckLoadsService,
@@ -73,6 +76,9 @@ export class DashboardService {
       recentCustomers,
       workerBuyingToday,
       todayClosings,
+      soldBySize,
+      latestStock,
+      latestProductionDay,
     ] = await Promise.all([
       this.productionService.sumBySizeInRange(todayStart, todayEnd, branch),
       this.salesService.sumInRange(todayStart, todayEnd, undefined, branch),
@@ -84,12 +90,15 @@ export class DashboardService {
       this.salesService.sumInRange(startOfMonth(now), todayEnd, undefined, branch),
       this.salesService.sumInRange(startOfYear(now), todayEnd, undefined, branch),
       this.getLast7DaysSales(branch),
-      this.salesService.getPendingPayments(8, branch),
+      this.salesService.getPendingPaymentsInRange(todayStart, todayEnd, branch),
       this.salesService.getRecentPayments(todayStart, todayEnd, 8, branch),
       this.customersService.getTruckCustomerSummary(branch),
       this.customersService.getRecentCustomers(8, branch),
       this.workersService.totalBuyingInRange(todayStart, todayEnd, branch),
       this.dailyClosingModel.find({ date: indiaDateKey(now), ...(branch ? { branch } : {}) }),
+      this.salesService.sumBySizeInRange(todayStart, todayEnd, undefined, branch),
+      branch ? this.stockEntryService.latestBefore(todayStart, branch) : Promise.resolve(null),
+      branch ? this.productionService.latestDayBefore(todayStart, branch) : Promise.resolve(null),
     ]);
 
     const closingReturnedTotal = todayClosings.reduce(
@@ -97,7 +106,15 @@ export class DashboardService {
       0,
     );
     const effectiveReturnedTotal = Math.max(Number(returnedTotal || 0), closingReturnedTotal);
-    const rawProductionTotal = Object.values(productionBySize).reduce((s, v) => s + v, 0);
+    const rawProductionTotal = totalBarQuantity(Object.entries(productionBySize).map(([size, quantity]) => ({ size, quantity })));
+    const soldBarTotal = totalBarQuantity(Object.entries(soldBySize).map(([size, quantity]) => ({ size, quantity })));
+    const openingStock = branch
+      ? latestStock && (!latestProductionDay || latestStock.day >= latestProductionDay)
+        ? Number(latestStock.total || 0)
+        : 0
+      : Math.max(0, Number(stock.totalClosingStock || 0) + soldBarTotal + Number(wastageTotal || 0) - rawProductionTotal);
+    const totalAvailableBars = Math.max(0, openingStock + rawProductionTotal);
+    const remainingBarStock = Math.max(0, totalAvailableBars - soldBarTotal - Number(wastageTotal || 0));
     const todayProductionTotal = Math.max(0, rawProductionTotal - effectiveReturnedTotal);
     const finalizedProductionBySize = {
       ...productionBySize,
@@ -131,6 +148,14 @@ export class DashboardService {
         recent: recentCustomers,
       },
       pendingStock: stock,
+      barStock: {
+        openingStock,
+        newProduction: rawProductionTotal,
+        totalAvailable: totalAvailableBars,
+        sold: soldBarTotal,
+        wastage: Number(wastageTotal || 0),
+        balance: remainingBarStock,
+      },
       monthlySales: salesMonth.totalAmount,
       yearlySales: salesYear.totalAmount,
       last7DaysSales,
@@ -239,8 +264,8 @@ export class DashboardService {
     ]);
 
     const sizeWiseToday = await this.salesService.sumBySizeInRange(todayStart, todayEnd, truckId);
-    const quantityToday = Object.values(sizeWiseToday).reduce((s, v) => s + v, 0);
-    const pickedToday = Object.values(loadedBySize).reduce((s, v) => s + v, 0);
+    const quantityToday = totalBarQuantity(Object.entries(sizeWiseToday).map(([size, quantity]) => ({ size, quantity })));
+    const pickedToday = totalBarQuantity(Object.entries(loadedBySize).map(([size, quantity]) => ({ size, quantity })));
 
     return {
       todaySales: salesToday.totalAmount,

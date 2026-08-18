@@ -23,8 +23,12 @@ export class Settings {
   @Prop({ default: '' })
   gstNumber: string;
 
+  // Data-URI logo uploaded from the settings page. Named to match what the
+  // frontend actually reads/writes — it previously sent `businessLogo` while
+  // this field was called `logoUrl`, so Mongoose's default strict mode
+  // silently dropped every uploaded logo before it ever reached the DB.
   @Prop({ default: '' })
-  logoUrl: string;
+  businessLogo: string;
 
   @Prop({ default: 'INR' })
   currency: string;

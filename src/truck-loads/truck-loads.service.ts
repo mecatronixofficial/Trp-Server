@@ -14,37 +14,56 @@ import { ProductionService } from '../production/production.service';
 import { StockEntryService } from '../stock-entry/stock-entry.service';
 import { OutsourceEntryService } from '../outsource-entry/outsource-entry.service';
 import { indiaDayEnd, indiaDayStart } from '../common/india-date';
+import { barQuantity, totalBarQuantity } from '../common/bar-quantity';
 
 @Injectable()
 export class TruckLoadsService {
   constructor(@InjectModel(TruckLoad.name) private loadModel: Model<TruckLoadDocument>, @InjectModel(Sale.name) private saleModel: Model<SaleDocument>, @InjectModel(Wastage.name) private wastageModel: Model<WastageDocument>, @InjectModel(DailyClosing.name) private closingModel: Model<DailyClosingDocument>, @InjectModel(DriverExpense.name) private expenseModel: Model<DriverExpenseDocument>, private trucksService: TrucksService, private productionService: ProductionService, private stockEntryService: StockEntryService, private outsourceEntryService: OutsourceEntryService) {}
 
-  async assertShopStock(branch: string, date: string | Date, requested: Record<string, number>) {
+  async assertShopStock(
+    branch: string,
+    date: string | Date,
+    requested: Record<string, number>,
+    exclusions: { saleId?: string } = {},
+  ) {
     const { from, to } = this.dateBounds(date);
     const day = new Date(date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     const closing = await this.closingModel.findOne({ branch, date: day });
     const sessionStartedAt = closing?.status === 'open' ? closing.sessionStartedAt : null;
     const createdAt = sessionStartedAt ? { createdAt: { $gte: sessionStartedAt } } : {};
-    const [produced, loads, shopSales, factoryWastage, stocked, outsourced] = await Promise.all([
+    const [produced, loads, shopSales, factoryWastage, stocked, outsourced, latestStock, latestProductionDay] = await Promise.all([
       this.productionService.sumBySizeInRange(from, to, branch, sessionStartedAt),
       this.sumBySizeInRange(from, to, branch, undefined, sessionStartedAt),
-      this.saleModel.find({ branch, truck: null, date: { $gte: from, $lte: to }, ...createdAt }),
+      this.saleModel.find({ branch, truck: null, date: { $gte: from, $lte: to }, ...createdAt, ...(exclusions.saleId ? { _id: { $ne: exclusions.saleId } } : {}) }),
       this.wastageModel.find({ branch, truck: null, reason: { $ne: 'unsold' }, date: { $gte: from, $lte: to }, ...createdAt }),
       this.stockEntryService.totalInRange(from, to, branch, sessionStartedAt),
       this.outsourceEntryService.totalInRange(from, to, branch, sessionStartedAt),
+      this.stockEntryService.latestBefore(from, branch),
+      this.productionService.latestDayBefore(from, branch),
     ]);
-    const sold: Record<string, number> = {};
-    const wasted: Record<string, number> = {};
-    for (const sale of shopSales) for (const item of sale.items) sold[item.size] = (sold[item.size] || 0) + Number(item.quantity || 0);
-    for (const row of factoryWastage) wasted[row.size] = (wasted[row.size] || 0) + Number(row.quantity || 0);
-    for (const [size, quantity] of Object.entries(requested)) {
-      const available = (produced[size] || 0) + (size === '1' ? outsourced - stocked : 0) - (wasted[size] || 0) - (loads[size] || 0) - (sold[size] || 0);
-      if (quantity > available + 0.0001) {
-        const remaining = Math.max(available, 0);
-        throw new BadRequestException(
-          `Only ${remaining} bar(s) remaining. The entered ${quantity} bar(s) is higher than the available balance.`,
-        );
-      }
+    const producedBars = totalBarQuantity(Object.entries(produced).map(([size, quantity]) => ({ size, quantity })));
+    const loadedBars = totalBarQuantity(Object.entries(loads).map(([size, quantity]) => ({ size, quantity })));
+    const soldBars = shopSales.reduce((sum, sale) => sum + totalBarQuantity(sale.items), 0);
+    const wastedBars = totalBarQuantity(factoryWastage);
+    const requestedBars = totalBarQuantity(Object.entries(requested).map(([size, quantity]) => ({ size, quantity })));
+    // A same-day reopen carries forward what this branch just returned at its
+    // last close today (stored on the row itself). latestBefore() only sees
+    // stock entries dated strictly before today, so it can never see that
+    // same-day return — same fix as DailyClosingService.calculate().
+    const sameDayReturn = Math.max(0, Number(closing?.returnedTotal ?? closing?.returned ?? 0));
+    const openingStock = producedBars <= 0
+      ? 0
+      : sameDayReturn > 0
+        ? sameDayReturn
+        : latestStock && (!latestProductionDay || latestStock.day >= latestProductionDay)
+          ? latestStock.total
+          : 0;
+    const available = producedBars + openingStock + outsourced - stocked - wastedBars - loadedBars - soldBars;
+    if (requestedBars > available + 0.0001) {
+      const remaining = Math.max(available, 0);
+      throw new BadRequestException(
+        `Only ${remaining} bar(s) remaining. The entered ${requestedBars} bar(s) is higher than the available balance.`,
+      );
     }
   }
 
@@ -127,7 +146,7 @@ export class TruckLoadsService {
     for (const load of loads) {
       const id = String((load.truck as any)?._id || load.truck);
       const row = ensure(id, load.truck);
-      row.taken += load.quantity;
+      row.taken += barQuantity(load);
       const loadTime = new Date((load as any).createdAt || load.date).getTime();
       if (!row.latestLoadAt || loadTime >= row.latestLoadAt) {
         row.latestLoadAt = loadTime;
@@ -137,8 +156,8 @@ export class TruckLoadsService {
         row.checkedAt = load.checkedAt || null;
       }
     }
-    for (const sale of sales) { const id = String(sale.truck); const row = ensure(id); row.sold += sale.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0); row.salesAmount += Number(sale.totalAmount || 0); row.collectedAmount += Number(sale.paidAmount || 0); row.pendingAmount += Number(sale.balanceAmount || 0); }
-    for (const waste of wastages) { const id = String(waste.truck); const row = ensure(id); if (waste.reason === 'unsold') row.returned += waste.quantity; else row.wastage += waste.quantity; }
+    for (const sale of sales) { const id = String(sale.truck); const row = ensure(id); row.sold += totalBarQuantity(sale.items); row.salesAmount += Number(sale.totalAmount || 0); row.collectedAmount += Number(sale.paidAmount || 0); row.pendingAmount += Number(sale.balanceAmount || 0); }
+    for (const waste of wastages) { const id = String(waste.truck); const row = ensure(id); if (waste.reason === 'unsold') row.returned += barQuantity(waste); else row.wastage += barQuantity(waste); }
     for (const expense of expenses) { const id = String(expense.truck); ensure(id).driverAmount += Number(expense.amount || 0); }
     return Object.values(rows).map((row: any) => {
       const remaining = row.taken - row.sold - row.returned - row.wastage;
@@ -172,12 +191,12 @@ export class TruckLoadsService {
       this.saleModel.find(match),
       this.wastageModel.find(match),
     ]);
-    const taken = loads.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+    const taken = totalBarQuantity(loads);
     const sold = sales.reduce(
-      (sum, sale) => sum + sale.items.reduce((itemSum, item) => itemSum + Number(item.quantity || 0), 0),
+      (sum, sale) => sum + totalBarQuantity(sale.items),
       0,
     );
-    const returnedOrWasted = wastages.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+    const returnedOrWasted = totalBarQuantity(wastages);
     const discrepancy = taken - sold - returnedOrWasted;
     if (discrepancy >= -0.0001) return;
 
@@ -240,12 +259,12 @@ export class TruckLoadsService {
         ...(exclusions.wastageId ? { _id: { $ne: exclusions.wastageId } } : {}),
       }),
     ]);
-    const taken = loads.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+    const taken = totalBarQuantity(loads);
     const sold = sales.reduce(
-      (sum, sale) => sum + sale.items.reduce((itemSum, item) => itemSum + Number(item.quantity || 0), 0),
+      (sum, sale) => sum + totalBarQuantity(sale.items),
       0,
     );
-    const wastedOrReturned = wastages.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+    const wastedOrReturned = totalBarQuantity(wastages);
     const available = Math.max(0, taken - sold - wastedOrReturned);
     if (requestedQuantity > available + 0.0001) {
       throw new BadRequestException(

@@ -11,6 +11,7 @@ import { WastageService } from '../wastage/wastage.service';
 import { DailyClosing, DailyClosingDocument } from '../daily-closing/schemas/daily-closing.schema';
 import { assertDayOpen } from '../daily-closing/closing-lock';
 import { indiaDayEnd, indiaDayStart } from '../common/india-date';
+import { totalBarQuantity } from '../common/bar-quantity';
 
 interface AuthUser {
   userId: string;
@@ -56,24 +57,11 @@ export class SalesService {
 
     const { built, totalAmount } = this.buildItems(dto.items);
     if (truckId) {
-      const end = new Date(); end.setHours(23, 59, 59, 999);
-      const epoch = new Date('2000-01-01');
-      const [loaded, alreadySold, wasted] = await Promise.all([
-        this.truckLoadsService.sumBySizeInRange(epoch, end, branch, truckId),
-        this.sumBySizeInRange(epoch, end, truckId, branch),
-        this.wastageService.sumBySizeInRange(epoch, end, truckId, branch),
-      ]);
-      const requested: Record<string, number> = {};
-      for (const item of built) requested[item.size] = (requested[item.size] || 0) + item.quantity;
-      for (const [size, quantity] of Object.entries(requested)) {
-        const available = (loaded[size] || 0) - (alreadySold[size] || 0) - (wasted[size] || 0);
-        if (quantity > available) throw new BadRequestException(`Only ${available} bar(s) of size ${size} available in this truck`);
-      }
       await this.truckLoadsService.assertTruckBalance(
         user,
         truckId,
         dto.date,
-        built.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+        totalBarQuantity(built),
       );
     } else {
       const requested: Record<string, number> = {};
@@ -180,9 +168,13 @@ export class SalesService {
         user,
         dto.truck,
         dto.date,
-        built.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+        totalBarQuantity(built),
         { saleId: id },
       );
+    } else {
+      const requested: Record<string, number> = {};
+      for (const item of built) requested[item.size] = (requested[item.size] || 0) + item.quantity;
+      await this.truckLoadsService.assertShopStock(branch, dto.date, requested, { saleId: id });
     }
     const session = await this.connection.startSession();
     try {
@@ -282,7 +274,7 @@ export class SalesService {
       const key = sale.truck._id.toString();
       if (!totals[key]) totals[key] = { truckName: (sale.truck as any).truckName, totalAmount: 0, quantity: 0 };
       totals[key].totalAmount += sale.totalAmount;
-      totals[key].quantity += sale.items.reduce((s, i) => s + i.quantity, 0);
+      totals[key].quantity += totalBarQuantity(sale.items);
     }
     return totals;
   }
@@ -298,7 +290,7 @@ export class SalesService {
       const key = sale.customer._id.toString();
       if (!totals[key]) totals[key] = { customerName: (sale.customer as any).name, totalAmount: 0, quantity: 0 };
       totals[key].totalAmount += sale.totalAmount;
-      totals[key].quantity += sale.items.reduce((s, i) => s + i.quantity, 0);
+      totals[key].quantity += totalBarQuantity(sale.items);
     }
     return totals;
   }
@@ -317,6 +309,20 @@ export class SalesService {
       .populate('customer', 'name phoneNumber creditBalance truck')
       .sort({ date: 1, createdAt: 1 })
       .limit(limit)
+      .exec();
+  }
+
+  // Oldest-first + a small limit (getPendingPayments above) is meant for
+  // surfacing the longest-overdue debts, not "today's" pending bills — with
+  // more than `limit` old unpaid bills outstanding, today's newer ones never
+  // make the cut. The dashboard's "Today's Pending Customer Payments" needs
+  // an actual date-scoped query instead.
+  async getPendingPaymentsInRange(from: Date, to: Date, branchId?: string) {
+    return this.saleModel
+      .find({ balanceAmount: { $gt: 0 }, date: { $gte: from, $lte: to }, ...(branchId ? { branch: branchId } : {}) })
+      .populate('truck', 'truckName truckNumber')
+      .populate('customer', 'name phoneNumber creditBalance truck')
+      .sort({ date: 1, createdAt: 1 })
       .exec();
   }
 

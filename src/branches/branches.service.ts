@@ -81,6 +81,18 @@ export class BranchesService {
     return this.withAdmin(branch);
   }
 
+  async remove(id: string) {
+    const branch = await this.branchModel.findById(id);
+    if (!branch) throw new NotFoundException('Branch not found');
+    // A branch has trucks, customers and daily transaction history attached;
+    // require it to be deactivated first as a deliberate confirmation step
+    // before its admin account is removed and the branch record deleted.
+    if (branch.isActive) throw new BadRequestException('Deactivate the branch before deleting it');
+    await this.usersService.deleteBranchUsers(id);
+    await branch.deleteOne();
+    return { deleted: true };
+  }
+
   async resetAdminPassword(id: string, newPassword: string) {
     const admin = await this.usersService.findBranchAdmin(id);
     if (!admin) throw new NotFoundException('Branch admin not found');
@@ -116,6 +128,17 @@ export class BranchesService {
     if (!admin || admin.role !== Role.ADMIN) throw new NotFoundException('Branch admin not found');
     await this.usersService.resetPassword(adminId, newPassword);
     return { success: true };
+  }
+
+  async removeAdmin(adminId: string) {
+    const admin = await this.usersService.findById(adminId);
+    if (!admin || admin.role !== Role.ADMIN) throw new NotFoundException('Branch admin not found');
+    // Same deliberate-confirmation pattern as branch deletion: disable the
+    // login first, then delete it, rather than removing an active account
+    // in one click.
+    if (admin.isActive) throw new BadRequestException('Deactivate the admin before deleting it');
+    await this.usersService.deleteUser(adminId);
+    return { deleted: true };
   }
 
   private async withAdmin(branch: BranchDocument) {

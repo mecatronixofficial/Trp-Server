@@ -8,6 +8,7 @@ import { WastageService } from '../wastage/wastage.service';
 import { ICE_BAR_SIZES } from '../common/enums';
 import { TruckLoadsService } from '../truck-loads/truck-loads.service';
 import { ForbiddenException } from '@nestjs/common';
+import { totalBarQuantity } from '../common/bar-quantity';
 
 const EPOCH = new Date('2000-01-01');
 
@@ -47,7 +48,13 @@ export class StockService {
       return { size, quantity: produced - picked - sold - wasted + (returned[size] || 0) };
     });
 
-    const totalClosingStock = sizeWise.reduce((s, r) => s + r.quantity, 0);
+    const toItems = (totals: Record<string, number>) => Object.entries(totals).map(([size, quantity]) => ({ size, quantity }));
+    const totalClosingStock =
+      totalBarQuantity(toItems(production))
+      - totalBarQuantity(toItems(loaded))
+      - totalBarQuantity(toItems(shopSales))
+      - totalBarQuantity(toItems(wastage))
+      + totalBarQuantity(toItems(returned));
     return { asOfDate, sizeWise, totalClosingStock };
   }
 
@@ -68,7 +75,9 @@ export class StockService {
       this.wastageService.sumBySizeInRange(start, end, truckId, branch),
     ]);
     const sizeWise = ICE_BAR_SIZES.map((size) => ({ size, quantity: (loaded[size] || 0) - (sold[size] || 0) - (wasted[size] || 0) }));
-    return { truck: truckId, asOfDate, sizeWise, totalStock: sizeWise.reduce((sum, row) => sum + row.quantity, 0) };
+    const toItems = (totals: Record<string, number>) => Object.entries(totals).map(([size, quantity]) => ({ size, quantity }));
+    const totalStock = totalBarQuantity(toItems(loaded)) - totalBarQuantity(toItems(sold)) - totalBarQuantity(toItems(wasted));
+    return { truck: truckId, asOfDate, sizeWise, totalStock };
   }
 
   async getTodayStock() {

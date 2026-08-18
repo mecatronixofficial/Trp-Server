@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -17,9 +17,11 @@ export class BranchesController {
   @Post(':id/admins') createAdmin(@Param('id') id: string, @Body() dto: CreateBranchAdminDto) { return this.branchesService.createAdmin(id, dto); }
   @Patch('admins/:adminId/status') setAdminStatus(@Param('adminId') adminId: string, @Body() dto: { isActive: boolean }) { return this.branchesService.setAdminStatus(adminId, dto.isActive); }
   @Patch('admins/:adminId/reset-password') resetSpecificPassword(@Param('adminId') adminId: string, @Body() dto: ResetBranchAdminPasswordDto) { return this.branchesService.resetSpecificAdminPassword(adminId, dto.newPassword); }
+  @Delete('admins/:adminId') removeAdmin(@Param('adminId') adminId: string) { return this.branchesService.removeAdmin(adminId); }
   @Patch(':id/admin/reset-password')
   resetPassword(@Param('id') id: string, @Body() dto: ResetBranchAdminPasswordDto) {
     return this.branchesService.resetAdminPassword(id, dto.newPassword);
   }
   @Patch(':id') update(@Param('id') id: string, @Body() dto: UpdateBranchDto) { return this.branchesService.update(id, dto); }
+  @Delete(':id') remove(@Param('id') id: string) { return this.branchesService.remove(id); }
 }
