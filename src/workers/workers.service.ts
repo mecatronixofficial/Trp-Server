@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import {
   CreateWorkerAttendanceDto,
   CreateWorkerBuyingDto,
@@ -11,6 +11,7 @@ import {
 } from './dto/worker.dto';
 import { Worker, WorkerDocument } from './schemas/worker.schema';
 import { WorkerAttendance, WorkerAttendanceDocument, WorkerAttendanceStatus } from './schemas/worker-attendance.schema';
+import { Truck, TruckDocument } from '../trucks/schemas/truck.schema';
 import { indiaDayEnd, indiaDayStart } from '../common/india-date';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class WorkersService {
   constructor(
     @InjectModel(Worker.name) private workerModel: Model<WorkerDocument>,
     @InjectModel(WorkerAttendance.name) private attendanceModel: Model<WorkerAttendanceDocument>,
+    @InjectModel(Truck.name) private truckModel: Model<TruckDocument>,
   ) {}
 
   private branchFor(user: any, requested?: string, required = false) {
@@ -26,11 +28,52 @@ export class WorkersService {
     return branch;
   }
 
-  createWorker(dto: CreateWorkerDto, user: any) {
-    return this.workerModel.create({ ...dto, branch: this.branchFor(user, (dto as any).branch, true) });
+  // The Workers page already blocks a duplicate name/phone client-side, but
+  // that check only looks at whatever list happened to be loaded in the
+  // browser — enforce it here too so a person can never end up with two
+  // records (one plain, one truck-linked) no matter how it's triggered.
+  async createWorker(dto: CreateWorkerDto, user: any) {
+    const branch = this.branchFor(user, (dto as any).branch, true);
+    const normalizedName = String(dto.name || '').trim().toLowerCase();
+    const normalizedPhone = String(dto.phoneNumber || '').replace(/\D/g, '');
+    const existing = await this.workerModel.find({ branch }).exec();
+    const duplicate = existing.find((worker) => {
+      if (worker.name.trim().toLowerCase() === normalizedName) return true;
+      const workerPhone = String(worker.phoneNumber || '').replace(/\D/g, '');
+      return Boolean(normalizedPhone) && workerPhone === normalizedPhone;
+    });
+    if (duplicate) {
+      throw new BadRequestException(
+        duplicate.name.trim().toLowerCase() === normalizedName
+          ? 'A worker with this name already exists.'
+          : 'A worker with this phone number already exists.',
+      );
+    }
+    return this.workerModel.create({ ...dto, branch });
   }
 
-  createDriver(truck: string, branch: string, name: string, phoneNumber: string) {
+  // A driver is often typed in as the name of a worker that was already
+  // created separately on the Workers page. Link that existing worker to
+  // the new truck instead of creating a duplicate person record — matched
+  // the same way the Workers page itself checks for duplicates (name or
+  // phone number), restricted to workers not already linked to a truck.
+  async createDriver(truck: string, branch: string, name: string, phoneNumber: string) {
+    const normalizedName = String(name || '').trim().toLowerCase();
+    const normalizedPhone = String(phoneNumber || '').replace(/\D/g, '');
+    const unlinkedWorkers = await this.workerModel.find({ branch, truck: { $exists: false } }).exec();
+    const existing = unlinkedWorkers.find((worker) => {
+      if (worker.name.trim().toLowerCase() === normalizedName) return true;
+      const workerPhone = String(worker.phoneNumber || '').replace(/\D/g, '');
+      return Boolean(normalizedPhone) && workerPhone === normalizedPhone;
+    });
+    if (existing) {
+      existing.truck = new Types.ObjectId(truck) as any;
+      existing.name = name;
+      existing.phoneNumber = phoneNumber;
+      existing.role = 'Driver';
+      existing.isActive = true;
+      return existing.save();
+    }
     return this.workerModel.create({
       truck,
       branch,
@@ -41,7 +84,42 @@ export class WorkersService {
     });
   }
 
-  updateDriver(truck: string, values: { name?: string; phoneNumber?: string; isActive?: boolean }) {
+  // Same duplicate-prevention rule as createDriver, but for the "edit an
+  // existing truck's driver" path: renaming the truck's linked driver to a
+  // name that now matches a different, separately-created worker must merge
+  // into that worker rather than just renaming the truck's own worker record
+  // in place — otherwise a second person with the same name still results.
+  async updateDriver(truck: string, branch: string, values: { name?: string; phoneNumber?: string; isActive?: boolean }) {
+    const currentDriver = await this.workerModel.findOne({ truck }).exec();
+    if (!currentDriver) return null;
+
+    const nextName = values.name !== undefined ? values.name : currentDriver.name;
+    const nextPhone = values.phoneNumber !== undefined ? values.phoneNumber : currentDriver.phoneNumber;
+    const normalizedName = String(nextName || '').trim().toLowerCase();
+    const normalizedPhone = String(nextPhone || '').replace(/\D/g, '');
+    const isChanging = (values.name !== undefined && normalizedName !== currentDriver.name.trim().toLowerCase())
+      || (values.phoneNumber !== undefined && normalizedPhone !== String(currentDriver.phoneNumber || '').replace(/\D/g, ''));
+
+    if (isChanging && branch) {
+      const otherUnlinked = await this.workerModel.find({ branch, truck: { $exists: false }, _id: { $ne: currentDriver._id } }).exec();
+      const match = otherUnlinked.find((worker) => {
+        if (worker.name.trim().toLowerCase() === normalizedName) return true;
+        const workerPhone = String(worker.phoneNumber || '').replace(/\D/g, '');
+        return Boolean(normalizedPhone) && workerPhone === normalizedPhone;
+      });
+      if (match) {
+        currentDriver.isActive = false;
+        currentDriver.truck = undefined as any;
+        await currentDriver.save();
+        match.truck = new Types.ObjectId(truck) as any;
+        match.name = nextName;
+        match.phoneNumber = nextPhone;
+        match.role = 'Driver';
+        match.isActive = values.isActive !== undefined ? values.isActive : true;
+        return match.save();
+      }
+    }
+
     return this.workerModel.findOneAndUpdate({ truck }, values, { new: true }).exec();
   }
 
@@ -64,6 +142,15 @@ export class WorkersService {
     const branch = this.branchFor(user, (dto as any).branch);
     const worker = await this.workerModel.findOneAndUpdate({ _id: id, ...(branch ? { branch } : {}) }, dto, { new: true });
     if (!worker) throw new NotFoundException('Worker not found');
+    // Keep a linked truck's own driver fields in sync so editing this person
+    // from either the Workers page or the Trucks page shows the same name/
+    // phone number everywhere.
+    if (worker.truck && (dto.name !== undefined || dto.phoneNumber !== undefined)) {
+      await this.truckModel.findByIdAndUpdate(worker.truck, {
+        ...(dto.name !== undefined ? { driverName: dto.name } : {}),
+        ...(dto.phoneNumber !== undefined ? { phoneNumber: dto.phoneNumber } : {}),
+      });
+    }
     return worker;
   }
 

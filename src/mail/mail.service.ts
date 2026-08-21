@@ -17,7 +17,7 @@ export class MailService {
     const from = this.config.get<string>('RESEND_FROM_EMAIL') || 'Tiruppur Ice <onboarding@resend.dev>';
 
     if (!apiKey) {
-      console.log(`Email to ${options.to}: ${options.subject}\n${options.text}`);
+      console.info(`Email delivery is not configured; skipped message to ${options.to}.`);
       return 'logged';
     }
 

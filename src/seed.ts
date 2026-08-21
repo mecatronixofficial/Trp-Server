@@ -42,8 +42,8 @@ async function seed() {
     displayName: 'Administrator',
   });
 
-  console.log(`Admin user created: username="${username}" password="${password}"`);
-  console.log('IMPORTANT: change this password after first login.');
+  console.log(`Admin user created: username="${username}".`);
+  console.log('IMPORTANT: change the configured initial password after first login.');
   await mongoose.disconnect();
 }
 
