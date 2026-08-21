@@ -101,7 +101,7 @@ export class TrucksService {
     else if (actor?.selectedBranch) filter.branch = actor.selectedBranch;
     const truck = await this.truckModel.findOneAndUpdate(filter, dto, { new: true });
     if (!truck) throw new NotFoundException('Truck not found');
-    await this.workersService.updateDriver(id, {
+    await this.workersService.updateDriver(id, String(truck.branch), {
       ...(dto.driverName !== undefined ? { name: dto.driverName } : {}),
       ...(dto.phoneNumber !== undefined ? { phoneNumber: dto.phoneNumber } : {}),
       ...(dto.status !== undefined ? { isActive: dto.status } : {}),

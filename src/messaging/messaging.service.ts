@@ -24,7 +24,7 @@ export class MessagingService {
     if (twilioDelivery) return twilioDelivery;
 
     if (this.config.get<string>('OTP_CONSOLE_FALLBACK') === 'true') {
-      console.log(`Admin password reset OTP message for ${to}: ${message}`);
+      console.info(`Admin password reset message delivery is not configured for ${to}.`);
       return 'logged';
     }
 

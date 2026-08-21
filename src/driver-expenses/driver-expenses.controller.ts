@@ -3,7 +3,7 @@ import { IsDateString, IsMongoId, IsNumber, IsOptional, IsString, Min } from 'cl
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DriverExpensesService } from './driver-expenses.service';
-class DriverExpenseDto { @IsOptional() @IsMongoId() truck?: string; @IsDateString() date: string; @IsNumber() @Min(0.01) amount: number; @IsString() purpose: string; @IsOptional() @IsString() notes?: string; }
+class DriverExpenseDto { @IsOptional() @IsMongoId() truck?: string; @IsDateString() date: string; @IsNumber() @Min(0.01) amount: number; @IsString() purpose: string; @IsOptional() @IsString() costType?: string; @IsOptional() @IsNumber() @Min(0) fuelQuantity?: number; @IsOptional() @IsString() notes?: string; }
 @UseGuards(JwtAuthGuard)
 @Controller('driver-expenses')
 export class DriverExpensesController {

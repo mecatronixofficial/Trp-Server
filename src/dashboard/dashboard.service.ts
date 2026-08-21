@@ -13,6 +13,7 @@ import { Model } from 'mongoose';
 import { DailyClosing, DailyClosingDocument } from '../daily-closing/schemas/daily-closing.schema';
 import { totalBarQuantity } from '../common/bar-quantity';
 import { StockEntryService } from '../stock-entry/stock-entry.service';
+import { ExpensesService } from '../expenses/expenses.service';
 
 function startOfDay(d: Date) {
   const key = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
@@ -50,6 +51,7 @@ export class DashboardService {
     private workersService: WorkersService,
     private truckLoadsService: TruckLoadsService,
     private trucksService: TrucksService,
+    private expensesService: ExpensesService,
     @InjectModel(DailyClosing.name) private dailyClosingModel: Model<DailyClosingDocument>,
   ) {}
 
@@ -79,6 +81,7 @@ export class DashboardService {
       soldBySize,
       latestStock,
       latestProductionDay,
+      truckExpensesToday,
     ] = await Promise.all([
       this.productionService.sumBySizeInRange(todayStart, todayEnd, branch),
       this.salesService.sumInRange(todayStart, todayEnd, undefined, branch),
@@ -99,7 +102,13 @@ export class DashboardService {
       this.salesService.sumBySizeInRange(todayStart, todayEnd, undefined, branch),
       branch ? this.stockEntryService.latestBefore(todayStart, branch) : Promise.resolve(null),
       branch ? this.productionService.latestDayBefore(todayStart, branch) : Promise.resolve(null),
+      this.expensesService.sumByTruckInRange(todayStart, todayEnd, branch),
     ]);
+
+    for (const [truckId, row] of Object.entries(truckWiseToday) as Array<[string, any]>) {
+      row.expenseAmount = Number(truckExpensesToday[truckId] || 0);
+      row.balanceAmount = Number(row.collectionAmount || 0) - row.expenseAmount;
+    }
 
     const closingReturnedTotal = todayClosings.reduce(
       (sum, closing) => sum + Number(closing.returnedTotal ?? closing.returned ?? 0),

@@ -263,8 +263,8 @@ export class SalesService {
   }
 
   async sumByTruckInRange(from: Date, to: Date, branchId?: string) {
-    const sales = await this.saleModel.find({ date: { $gte: from, $lte: to }, truck: { $ne: null }, ...(branchId ? { branch: branchId } : {}) }).populate('truck', 'truckName truckNumber').exec();
-    const totals: Record<string, { truckName: string; totalAmount: number; quantity: number }> = {};
+    const sales = await this.saleModel.find({ date: { $gte: from, $lte: to }, truck: { $ne: null }, ...(branchId ? { branch: branchId } : {}) }).populate('truck', 'truckName truckNumber driverName').exec();
+    const totals: Record<string, { truckName: string; driverName: string; totalAmount: number; collectionAmount: number; pendingAmount: number; quantity: number }> = {};
     for (const sale of sales) {
       // The `truck` field can still hold an id whose document was later
       // deleted (trucks.service#remove does not block or cascade), which
@@ -272,8 +272,10 @@ export class SalesService {
       // crashing the whole report on sale.truck._id.
       if (!sale.truck) continue;
       const key = sale.truck._id.toString();
-      if (!totals[key]) totals[key] = { truckName: (sale.truck as any).truckName, totalAmount: 0, quantity: 0 };
+      if (!totals[key]) totals[key] = { truckName: (sale.truck as any).truckName, driverName: (sale.truck as any).driverName || '', totalAmount: 0, collectionAmount: 0, pendingAmount: 0, quantity: 0 };
       totals[key].totalAmount += sale.totalAmount;
+      totals[key].collectionAmount += sale.paidAmount;
+      totals[key].pendingAmount += sale.balanceAmount;
       totals[key].quantity += totalBarQuantity(sale.items);
     }
     return totals;

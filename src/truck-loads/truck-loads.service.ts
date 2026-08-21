@@ -9,6 +9,7 @@ import { Wastage, WastageDocument } from '../wastage/schemas/wastage.schema';
 import { DailyClosing, DailyClosingDocument } from '../daily-closing/schemas/daily-closing.schema';
 import { assertDayOpen } from '../daily-closing/closing-lock';
 import { DriverExpense, DriverExpenseDocument } from '../driver-expenses/schemas/driver-expense.schema';
+import { Expense, ExpenseDocument } from '../expenses/schemas/expense.schema';
 import { BadRequestException } from '@nestjs/common';
 import { ProductionService } from '../production/production.service';
 import { StockEntryService } from '../stock-entry/stock-entry.service';
@@ -18,7 +19,7 @@ import { barQuantity, totalBarQuantity } from '../common/bar-quantity';
 
 @Injectable()
 export class TruckLoadsService {
-  constructor(@InjectModel(TruckLoad.name) private loadModel: Model<TruckLoadDocument>, @InjectModel(Sale.name) private saleModel: Model<SaleDocument>, @InjectModel(Wastage.name) private wastageModel: Model<WastageDocument>, @InjectModel(DailyClosing.name) private closingModel: Model<DailyClosingDocument>, @InjectModel(DriverExpense.name) private expenseModel: Model<DriverExpenseDocument>, private trucksService: TrucksService, private productionService: ProductionService, private stockEntryService: StockEntryService, private outsourceEntryService: OutsourceEntryService) {}
+  constructor(@InjectModel(TruckLoad.name) private loadModel: Model<TruckLoadDocument>, @InjectModel(Sale.name) private saleModel: Model<SaleDocument>, @InjectModel(Wastage.name) private wastageModel: Model<WastageDocument>, @InjectModel(DailyClosing.name) private closingModel: Model<DailyClosingDocument>, @InjectModel(DriverExpense.name) private legacyExpenseModel: Model<DriverExpenseDocument>, @InjectModel(Expense.name) private expenseModel: Model<ExpenseDocument>, private trucksService: TrucksService, private productionService: ProductionService, private stockEntryService: StockEntryService, private outsourceEntryService: OutsourceEntryService) {}
 
   async assertShopStock(
     branch: string,
@@ -133,12 +134,13 @@ export class TruckLoadsService {
     const match: any = { date: { $gte: from, $lte: to }, ...(branch ? { branch } : {}), ...(truckId ? { truck: truckId } : {}) };
     const salesMatch = { ...match, truck: truckId || { $ne: null } };
     const truckOnlyMatch = { ...match, truck: truckId || { $ne: null } };
-    const [loads, sales, wastages, expenses] = await Promise.all([
+    const [loads, sales, wastages, legacyExpenses, unifiedExpenses] = await Promise.all([
       this.loadModel.find(match).populate('truck', 'truckName truckNumber driverName'),
-      this.saleModel.find(salesMatch), this.wastageModel.find(truckOnlyMatch), this.expenseModel.find(truckOnlyMatch),
+      this.saleModel.find(salesMatch), this.wastageModel.find(truckOnlyMatch), this.legacyExpenseModel.find(truckOnlyMatch), this.expenseModel.find({ ...truckOnlyMatch, createdByType: 'DRIVER' }),
     ]);
+    const expenses = [...legacyExpenses, ...unifiedExpenses];
     const rows: Record<string, any> = {};
-    const ensure = (id: string, truck?: any) => rows[id] ||= { truckId: id, truck, date, taken: 0, sold: 0, returned: 0, wastage: 0, remaining: 0, salesAmount: 0, collectedAmount: 0, pendingAmount: 0, driverAmount: 0, driverClosed: false, driverClosedAt: null, checked: false, checkedAt: null };
+    const ensure = (id: string, truck?: any) => rows[id] ||= { truckId: id, truck, date, taken: 0, sold: 0, returned: 0, wastage: 0, remaining: 0, salesAmount: 0, collectedAmount: 0, pendingAmount: 0, expenseAmount: 0, driverAmount: 0, driverClosed: false, driverClosedAt: null, checked: false, checkedAt: null };
     if (user.role !== 'truck') {
       const trucks = await this.trucksService.findAll(user);
       for (const truck of trucks) if (truck.status) ensure(truck._id.toString(), truck);
@@ -158,7 +160,13 @@ export class TruckLoadsService {
     }
     for (const sale of sales) { const id = String(sale.truck); const row = ensure(id); row.sold += totalBarQuantity(sale.items); row.salesAmount += Number(sale.totalAmount || 0); row.collectedAmount += Number(sale.paidAmount || 0); row.pendingAmount += Number(sale.balanceAmount || 0); }
     for (const waste of wastages) { const id = String(waste.truck); const row = ensure(id); if (waste.reason === 'unsold') row.returned += barQuantity(waste); else row.wastage += barQuantity(waste); }
-    for (const expense of expenses) { const id = String(expense.truck); ensure(id).driverAmount += Number(expense.amount || 0); }
+    for (const expense of expenses) {
+      const id = String(expense.truck);
+      const row = ensure(id);
+      const type = String((expense as any).costType || '').trim().toLowerCase();
+      if (['advance_for_employee', 'advance_for_emp', 'advance_employee', 'employee_advance', 'worker_amount'].includes(type)) row.driverAmount += Number(expense.amount || 0);
+      else row.expenseAmount += Number(expense.amount || 0);
+    }
     return Object.values(rows).map((row: any) => {
       const remaining = row.taken - row.sold - row.returned - row.wastage;
       const closeReason = row.driverClosed ? 'Closed' : !row.taken ? 'No bars taken / day not started' : remaining < 0 ? `${Math.abs(remaining)} bar(s) over-entered. Correct sale or wastage.` : remaining > 0 ? `${remaining} bar(s) not tallied` : 'Driver has not confirmed closing';

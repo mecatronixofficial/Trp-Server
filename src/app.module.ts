@@ -22,6 +22,7 @@ import { TruckLoadsModule } from './truck-loads/truck-loads.module';
 import { TruckAssignmentsModule } from './truck-assignments/truck-assignments.module';
 import { DriverExpensesModule } from './driver-expenses/driver-expenses.module';
 import { DailyClosingModule } from './daily-closing/daily-closing.module';
+import { ExpensesModule } from './expenses/expenses.module';
 import { getMongoUri } from './config/mongo-uri';
 
 @Module({
@@ -62,6 +63,7 @@ import { getMongoUri } from './config/mongo-uri';
     TruckAssignmentsModule,
     DriverExpensesModule,
     DailyClosingModule,
+    ExpensesModule,
   ],
 })
 export class AppModule {}
