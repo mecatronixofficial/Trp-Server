@@ -103,10 +103,19 @@ export class SalesService {
     user: AuthUser,
   ) {
     const query: any = {};
-    if (user.role !== 'super_admin') query.branch = user.branch;
-    else if ((user as any).selectedBranch) query.branch = (user as any).selectedBranch;
-    if (user.role === 'truck') query.truck = user.truck;
-    else if (filters.truck) query.truck = filters.truck;
+    if (user.role === 'truck') {
+      const assignedTruck = await this.truckModel.findById(user.truck).select('branch').exec();
+      if (!assignedTruck) throw new ForbiddenException('This login is not linked to a truck');
+      query.branch = assignedTruck.branch;
+      // A customer account lookup must include every bill in the branch,
+      // including shop sales and sales from earlier truck visits. Normal
+      // dashboard queries remain restricted to this logged-in truck.
+      if (!filters.customer) query.truck = user.truck;
+    } else {
+      if (user.role !== 'super_admin') query.branch = user.branch;
+      else if ((user as any).selectedBranch) query.branch = (user as any).selectedBranch;
+      if (filters.truck) query.truck = filters.truck;
+    }
 
     if (filters.customer) query.customer = filters.customer;
     if (filters.saleType) query.saleType = filters.saleType;
@@ -196,13 +205,21 @@ export class SalesService {
   }
 
   async addPayment(id: string, dto: AddSalePaymentDto, user: AuthUser) {
-    const sale = await this.saleModel.findOne({ _id: id, ...(user.role === 'super_admin' ? {} : { branch: user.branch }) });
+    let collectorTruck: TruckDocument | null = null;
+    let branch = user.role === 'super_admin' ? (user as any).selectedBranch : user.branch;
+    if (user.role === 'truck') {
+      collectorTruck = await this.truckModel.findById(user.truck).exec();
+      if (!collectorTruck) throw new ForbiddenException('This login is not linked to a truck');
+      branch = collectorTruck.branch.toString();
+    }
+    const sale = await this.saleModel.findOne({ _id: id, ...(branch ? { branch } : {}) });
     if (!sale) throw new NotFoundException('Sale not found');
     await assertDayOpen(this.closingModel, sale.branch.toString(), dto.date);
-    if (sale.truck) await this.truckLoadsService.assertTripOpen(sale.truck.toString(), dto.date);
-    if (user.role === 'truck' && (!sale.truck || sale.truck.toString() !== user.truck)) {
-      throw new ForbiddenException('Not allowed to update this sale payment');
-    }
+    // Customer collections follow the customer account, not the bill source.
+    // A driver can therefore collect a shop bill in the same branch, and the
+    // payment is attributed to the truck that actually collected the money.
+    // Collection does not consume ice bars, so it remains available without
+    // an assigned/open truck trip. The branch daily close is still the lock.
 
     const amount = Math.min(Number(dto.amount), sale.balanceAmount);
     if (amount <= 0) return sale;
@@ -216,12 +233,14 @@ export class SalesService {
       amount,
       paymentMode: dto.paymentMode,
       notes: dto.notes || '',
+      collectedByTruck: user.role === 'truck' ? user.truck : null,
+      collectedByName: user.role === 'truck' ? (user as any).username || collectorTruck?.driverName || 'Driver' : (user as any).username || 'Admin',
     } as any);
 
     await sale.save();
     await this.customersService.adjustCreditBalance(sale.customer.toString(), -amount);
 
-    return this.findOne(id, user);
+    return sale.populate('truck customer');
   }
 
   async remove(id: string, user: AuthUser) {
@@ -245,6 +264,96 @@ export class SalesService {
     const totalPaid = sales.reduce((s, r) => s + r.paidAmount, 0);
     const totalBalance = sales.reduce((s, r) => s + r.balanceAmount, 0);
     return { totalAmount, totalPaid, totalBalance, count: sales.length };
+  }
+
+  async getTruckCollectionSummary(from: Date, to: Date, truckId: string) {
+    const [todaySales, salesWithCollectedPayments] = await Promise.all([
+      this.saleModel
+        .find({ truck: truckId, date: { $gte: from, $lte: to } })
+        .select('paidAmount payments')
+        .lean()
+        .exec(),
+      this.saleModel
+        .find({
+          payments: {
+            $elemMatch: {
+              date: { $gte: from, $lte: to },
+              collectedByTruck: truckId,
+            },
+          },
+        })
+        .select('payments')
+        .lean()
+        .exec(),
+    ]);
+
+    // paidAmount is cumulative. Subtract every follow-up payment to recover
+    // the amount received when each of today's sales was first created.
+    const todaySalesCollection = todaySales.reduce((sum, sale) => {
+      const followUpPayments = (sale.payments || []).reduce(
+        (paymentSum, payment) => paymentSum + Number(payment.amount || 0),
+        0,
+      );
+      return sum + Math.max(0, Number(sale.paidAmount || 0) - followUpPayments);
+    }, 0);
+
+    const pendingPaymentCollection = salesWithCollectedPayments.reduce(
+      (sum, sale) => sum + (sale.payments || []).reduce((paymentSum, payment) => {
+        const paymentDate = new Date(payment.date);
+        const collectorId = payment.collectedByTruck?.toString();
+        if (paymentDate < from || paymentDate > to || collectorId !== truckId) return paymentSum;
+        return paymentSum + Number(payment.amount || 0);
+      }, 0),
+      0,
+    );
+
+    return {
+      todaySalesCollection,
+      pendingPaymentCollection,
+      totalCollection: todaySalesCollection + pendingPaymentCollection,
+    };
+  }
+
+  async getCollectionSummaryInRange(from: Date, to: Date, branchId?: string) {
+    const branchFilter = branchId ? { branch: branchId } : {};
+    const [todaySales, salesWithPayments] = await Promise.all([
+      this.saleModel
+        .find({ date: { $gte: from, $lte: to }, ...branchFilter })
+        .select('paidAmount payments')
+        .lean()
+        .exec(),
+      this.saleModel
+        .find({
+          ...branchFilter,
+          payments: { $elemMatch: { date: { $gte: from, $lte: to } } },
+        })
+        .select('payments')
+        .lean()
+        .exec(),
+    ]);
+
+    const todaySalesCollection = todaySales.reduce((sum, sale) => {
+      const followUpPayments = (sale.payments || []).reduce(
+        (paymentSum, payment) => paymentSum + Number(payment.amount || 0),
+        0,
+      );
+      return sum + Math.max(0, Number(sale.paidAmount || 0) - followUpPayments);
+    }, 0);
+
+    const pendingPaymentCollection = salesWithPayments.reduce(
+      (sum, sale) => sum + (sale.payments || []).reduce((paymentSum, payment) => {
+        const paymentDate = new Date(payment.date);
+        if (paymentDate < from || paymentDate > to) return paymentSum;
+        return paymentSum + Number(payment.amount || 0);
+      }, 0),
+      0,
+    );
+
+    return {
+      todaySalesCollection,
+      pendingPaymentCollection,
+      totalCollection: todaySalesCollection + pendingPaymentCollection,
+    };
   }
 
   async sumBySizeInRange(from: Date, to: Date, truckId?: string, branchId?: string, shopOnly = false) {

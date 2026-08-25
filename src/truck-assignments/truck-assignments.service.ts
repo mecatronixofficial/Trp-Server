@@ -22,9 +22,17 @@ export class TruckAssignmentsService {
     return { from: new Date(`${day}T00:00:00.000+05:30`), to: new Date(`${day}T23:59:59.999+05:30`) };
   }
 
+  private branchId(truck: any) {
+    const branch = truck?.branch?._id || truck?.branch;
+    const id = String(branch || '');
+    if (!id) throw new BadRequestException('The selected truck is not assigned to a branch.');
+    return id;
+  }
+
   async upsert(dto: UpsertTruckAssignmentDto, user: any) {
     const truck = await this.trucksService.findOne(dto.truck, user);
-    await assertDayOpen(this.closingModel, truck.branch.toString(), dto.date);
+    const branch = this.branchId(truck);
+    await assertDayOpen(this.closingModel, branch, dto.date);
     const { from } = this.dateBounds(dto.date);
     const existingAssignment = await this.model.findOne({ truck: dto.truck, date: from });
     const acceptedQuantity = Number(existingAssignment?.quantity || 0);
@@ -32,7 +40,7 @@ export class TruckAssignmentsService {
     const assignment = await this.model.findOneAndUpdate(
       { truck: dto.truck, date: from },
       {
-        branch: truck.branch,
+        branch,
         truck: dto.truck,
         date: from,
         quantity: acceptedQuantity,
@@ -51,12 +59,13 @@ export class TruckAssignmentsService {
   async add(dto: UpsertTruckAssignmentDto, user: any) {
     if (dto.quantity <= 0) throw new BadRequestException('Assignment quantity must be greater than zero');
     const truck = await this.trucksService.findOne(dto.truck, user);
-    await assertDayOpen(this.closingModel, truck.branch.toString(), dto.date);
+    const branch = this.branchId(truck);
+    await assertDayOpen(this.closingModel, branch, dto.date);
     const { from } = this.dateBounds(dto.date);
     const assignment = await this.model.findOneAndUpdate(
       { truck: dto.truck, date: from },
       {
-        $setOnInsert: { branch: truck.branch, truck: dto.truck, date: from, quantity: 0 },
+        $setOnInsert: { branch, truck: dto.truck, date: from, quantity: 0 },
         $set: {
           notes: dto.notes || '',
           assignedBy: user.userId,

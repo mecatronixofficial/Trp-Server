@@ -1,9 +1,11 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { json, urlencoded, type NextFunction, type Request, type Response } from 'express';
 import { AppModule } from './app.module';
 import * as dns from 'dns';
+import { createHash } from 'crypto';
 dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 const API_PREFIX = 'api';
@@ -24,6 +26,7 @@ interface RateLimitOptions {
   windowMs: number;
   maxRequests: number;
   authMaxRequests: number;
+  sessionCookieName: string;
 }
 
 function parsePort(value?: string): number {
@@ -72,15 +75,46 @@ function securityHeaders(nodeEnv: string) {
   };
 }
 
-function rateLimit(options: RateLimitOptions) {
+function cookieValue(header: string | undefined, name: string) {
+  if (!header) return '';
+  const encoded = header
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
+  if (!encoded) return '';
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return '';
+  }
+}
+
+function rateLimit(options: RateLimitOptions, jwtService: JwtService) {
   const requests = new Map<string, RateLimitRecord>();
 
   return (req: Request, res: Response, next: NextFunction) => {
     if (req.method === 'OPTIONS') return next();
     const now = Date.now();
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
-    const limit = req.path === `/${API_PREFIX}/auth/login` ? options.authMaxRequests : options.maxRequests;
-    const key = `${ip}:${req.path === `/${API_PREFIX}/auth/login` ? 'auth' : 'api'}`;
+    const isLogin = req.path === `/${API_PREFIX}/auth/login`;
+    const limit = isLogin ? options.authMaxRequests : options.maxRequests;
+    // Requests arrive through the Next.js proxy, so IP-only limiting can put
+    // every signed-in user into the same bucket. Keep login attempts tied to
+    // the client IP, while normal authenticated API traffic is isolated by
+    // the opaque session cookie. Hashing avoids storing credentials in memory.
+    const token = cookieValue(req.headers.cookie, options.sessionCookieName);
+    let sessionKey = `ip:${ip}`;
+    if (token) {
+      try {
+        jwtService.verify(token);
+        sessionKey = `session:${createHash('sha256').update(token).digest('hex')}`;
+      } catch {
+        // Invalid or expired tokens remain in the IP bucket so arbitrary
+        // cookie values cannot be used to bypass rate limiting.
+      }
+    }
+    const key = isLogin ? `${ip}:auth` : `${sessionKey}:api`;
     const current = requests.get(key);
 
     if (!current || current.resetAt <= now) {
@@ -120,6 +154,7 @@ async function bootstrap() {
       config.get<string>('AUTH_RATE_LIMIT_MAX_REQUESTS'),
       DEFAULT_AUTH_RATE_LIMIT_MAX_REQUESTS,
     ),
+    sessionCookieName: config.get<string>('JWT_COOKIE_NAME') || 'tii_token',
   };
 
   const server = app.getHttpAdapter().getInstance();
@@ -135,7 +170,7 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Branch-Id'],
     maxAge: 86400,
   });
-  app.use(rateLimit(rateLimitOptions));
+  app.use(rateLimit(rateLimitOptions, app.get(JwtService)));
   app.enableShutdownHooks();
   app.setGlobalPrefix(API_PREFIX);
   app.useGlobalPipes(

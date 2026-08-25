@@ -1,4 +1,4 @@
-import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsMongoId, IsNotEmpty, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
 
 export class CreateTruckDto {
   @IsOptional() @IsString()
@@ -15,6 +15,9 @@ export class CreateTruckDto {
 
   @IsString() @IsNotEmpty()
   phoneNumber: string;
+
+  @IsMongoId()
+  worker: string;
 
   @IsOptional() @IsNumber() @Min(0)
   monthlySalary?: number;
@@ -38,6 +41,9 @@ export class UpdateTruckDto {
 
   @IsOptional() @IsString()
   phoneNumber?: string;
+
+  @IsOptional() @IsMongoId()
+  worker?: string;
 
   @IsOptional() @IsNumber() @Min(0)
   monthlySalary?: number;

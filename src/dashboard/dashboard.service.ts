@@ -64,6 +64,7 @@ export class DashboardService {
     const [
       productionBySize,
       salesToday,
+      collectionsToday,
       wastageTotal,
       returnedTotal,
       makingCostToday,
@@ -85,6 +86,7 @@ export class DashboardService {
     ] = await Promise.all([
       this.productionService.sumBySizeInRange(todayStart, todayEnd, branch),
       this.salesService.sumInRange(todayStart, todayEnd, undefined, branch),
+      this.salesService.getCollectionSummaryInRange(todayStart, todayEnd, branch),
       this.wastageService.totalInRange(todayStart, todayEnd, undefined, branch, undefined, 'unsold'),
       this.wastageService.totalInRange(todayStart, todayEnd, undefined, branch, 'unsold'),
       this.costService.totalInRange(todayStart, todayEnd, branch),
@@ -142,7 +144,9 @@ export class DashboardService {
         makingCost: makingCostToday,
         workerBuying: workerBuyingToday,
         profit: todayProfit,
-        collection: salesToday.totalPaid,
+        collection: collectionsToday.totalCollection,
+        salesCollection: collectionsToday.todaySalesCollection,
+        pendingPaymentCollection: collectionsToday.pendingPaymentCollection,
         balance: salesToday.totalBalance,
       },
       truckWiseSalesToday: truckWiseToday,
@@ -150,7 +154,7 @@ export class DashboardService {
         pendingBills: pendingPayments,
         recentToday: recentPaymentsToday,
         pendingAmount: pendingPayments.reduce((sum, sale) => sum + sale.balanceAmount, 0),
-        todayCollectedLater: recentPaymentsToday.reduce((sum, payment) => sum + payment.amount, 0),
+        todayCollectedLater: collectionsToday.pendingPaymentCollection,
       },
       customers: {
         truckWise: truckCustomerSummary,
@@ -263,8 +267,9 @@ export class DashboardService {
     const todayEnd = endOfDay(now);
 
     const branch = user?.branch;
-    const [salesToday, wastageToday, returnedToday, loadedBySize, truckStock, truck] = await Promise.all([
+    const [salesToday, collectionsToday, wastageToday, returnedToday, loadedBySize, truckStock, truck] = await Promise.all([
       this.salesService.sumInRange(todayStart, todayEnd, truckId),
+      this.salesService.getTruckCollectionSummary(todayStart, todayEnd, truckId),
       this.wastageService.totalInRange(todayStart, todayEnd, truckId, branch, undefined, 'unsold'),
       this.wastageService.totalInRange(todayStart, todayEnd, truckId, branch, 'unsold'),
       this.truckLoadsService.sumBySizeInRange(todayStart, todayEnd, branch, truckId),
@@ -279,7 +284,9 @@ export class DashboardService {
     return {
       todaySales: salesToday.totalAmount,
       todayQuantitySold: quantityToday,
-      todayCollection: salesToday.totalPaid,
+      todayCollection: collectionsToday.totalCollection,
+      todaySalesCollection: collectionsToday.todaySalesCollection,
+      pendingPaymentCollection: collectionsToday.pendingPaymentCollection,
       todayBalance: salesToday.totalBalance,
       todayWastage: wastageToday,
       todayPicked: pickedToday,

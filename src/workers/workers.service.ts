@@ -2,15 +2,13 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
-  CreateWorkerAttendanceDto,
   CreateWorkerBuyingDto,
   CreateWorkerDto,
-  UpdateWorkerAttendanceDto,
   UpdateWorkerBuyingDto,
   UpdateWorkerDto,
 } from './dto/worker.dto';
 import { Worker, WorkerDocument } from './schemas/worker.schema';
-import { WorkerAttendance, WorkerAttendanceDocument, WorkerAttendanceStatus } from './schemas/worker-attendance.schema';
+import { WorkerBuying, WorkerBuyingDocument } from './schemas/worker-buying.schema';
 import { Truck, TruckDocument } from '../trucks/schemas/truck.schema';
 import { indiaDayEnd, indiaDayStart } from '../common/india-date';
 
@@ -18,7 +16,7 @@ import { indiaDayEnd, indiaDayStart } from '../common/india-date';
 export class WorkersService {
   constructor(
     @InjectModel(Worker.name) private workerModel: Model<WorkerDocument>,
-    @InjectModel(WorkerAttendance.name) private attendanceModel: Model<WorkerAttendanceDocument>,
+    @InjectModel(WorkerBuying.name) private buyingModel: Model<WorkerBuyingDocument>,
     @InjectModel(Truck.name) private truckModel: Model<TruckDocument>,
   ) {}
 
@@ -52,81 +50,40 @@ export class WorkersService {
     return this.workerModel.create({ ...dto, branch });
   }
 
-  // A driver is often typed in as the name of a worker that was already
-  // created separately on the Workers page. Link that existing worker to
-  // the new truck instead of creating a duplicate person record — matched
-  // the same way the Workers page itself checks for duplicates (name or
-  // phone number), restricted to workers not already linked to a truck.
-  async createDriver(truck: string, branch: string, name: string, phoneNumber: string) {
-    const normalizedName = String(name || '').trim().toLowerCase();
-    const normalizedPhone = String(phoneNumber || '').replace(/\D/g, '');
-    const unlinkedWorkers = await this.workerModel.find({ branch, truck: { $exists: false } }).exec();
-    const existing = unlinkedWorkers.find((worker) => {
-      if (worker.name.trim().toLowerCase() === normalizedName) return true;
-      const workerPhone = String(worker.phoneNumber || '').replace(/\D/g, '');
-      return Boolean(normalizedPhone) && workerPhone === normalizedPhone;
-    });
-    if (existing) {
-      existing.truck = new Types.ObjectId(truck) as any;
-      existing.name = name;
-      existing.phoneNumber = phoneNumber;
-      existing.role = 'Driver';
-      existing.isActive = true;
-      return existing.save();
-    }
-    return this.workerModel.create({
-      truck,
+  // A truck never creates a person. Drivers are existing workers selected by
+  // id, which makes assignment deterministic even when names are similar.
+  async assignDriver(workerId: string, truck: string, branch: string) {
+    const selectedWorker = await this.workerModel.findOne({
+      _id: workerId,
       branch,
-      name,
-      phoneNumber,
-      role: 'Driver',
-      isActive: true,
-    });
-  }
+    }).exec();
+    if (!selectedWorker) throw new NotFoundException('Selected worker was not found in this branch');
 
-  // Same duplicate-prevention rule as createDriver, but for the "edit an
-  // existing truck's driver" path: renaming the truck's linked driver to a
-  // name that now matches a different, separately-created worker must merge
-  // into that worker rather than just renaming the truck's own worker record
-  // in place — otherwise a second person with the same name still results.
-  async updateDriver(truck: string, branch: string, values: { name?: string; phoneNumber?: string; isActive?: boolean }) {
-    const currentDriver = await this.workerModel.findOne({ truck }).exec();
-    if (!currentDriver) return null;
-
-    const nextName = values.name !== undefined ? values.name : currentDriver.name;
-    const nextPhone = values.phoneNumber !== undefined ? values.phoneNumber : currentDriver.phoneNumber;
-    const normalizedName = String(nextName || '').trim().toLowerCase();
-    const normalizedPhone = String(nextPhone || '').replace(/\D/g, '');
-    const isChanging = (values.name !== undefined && normalizedName !== currentDriver.name.trim().toLowerCase())
-      || (values.phoneNumber !== undefined && normalizedPhone !== String(currentDriver.phoneNumber || '').replace(/\D/g, ''));
-
-    if (isChanging && branch) {
-      const otherUnlinked = await this.workerModel.find({ branch, truck: { $exists: false }, _id: { $ne: currentDriver._id } }).exec();
-      const match = otherUnlinked.find((worker) => {
-        if (worker.name.trim().toLowerCase() === normalizedName) return true;
-        const workerPhone = String(worker.phoneNumber || '').replace(/\D/g, '');
-        return Boolean(normalizedPhone) && workerPhone === normalizedPhone;
-      });
-      if (match) {
-        currentDriver.isActive = false;
-        currentDriver.truck = undefined as any;
-        await currentDriver.save();
-        match.truck = new Types.ObjectId(truck) as any;
-        match.name = nextName;
-        match.phoneNumber = nextPhone;
-        match.role = 'Driver';
-        match.isActive = values.isActive !== undefined ? values.isActive : true;
-        return match.save();
-      }
+    const assignedTruck = String(selectedWorker.truck || '');
+    if (selectedWorker.isActive === false && assignedTruck !== truck) {
+      throw new BadRequestException('Selected worker is inactive');
+    }
+    if (assignedTruck && assignedTruck !== truck) {
+      throw new BadRequestException('Selected worker is already assigned to another truck');
     }
 
-    return this.workerModel.findOneAndUpdate({ truck }, values, { new: true }).exec();
+    const currentDriver = await this.workerModel.findOne({ truck }).exec();
+    if (currentDriver && String(currentDriver._id) !== String(selectedWorker._id)) {
+      await this.workerModel.updateOne({ _id: currentDriver._id }, { $unset: { truck: 1 } }).exec();
+    }
+
+    selectedWorker.truck = new Types.ObjectId(truck) as any;
+    selectedWorker.role = 'Driver';
+    selectedWorker.isActive = true;
+    return selectedWorker.save();
   }
 
-  deactivateDriver(truck: string) {
+  // Removing a truck or changing its driver must not remove/deactivate the
+  // person. The worker remains available for another assignment.
+  unassignDriver(truck: string) {
     return this.workerModel.findOneAndUpdate(
       { truck },
-      { $set: { isActive: false }, $unset: { truck: 1 } },
+      { $unset: { truck: 1 } },
       { new: true },
     ).exec();
   }
@@ -135,11 +92,41 @@ export class WorkersService {
     const query: any = includeInactive === 'true' ? {} : { isActive: true };
     const branch = this.branchFor(user, requestedBranch);
     if (branch) query.branch = branch;
-    return this.workerModel.find(query).sort({ name: 1 }).exec();
+    return this.workerModel.find(query).populate('branch', 'name code isActive').sort({ name: 1 }).exec();
   }
 
   async updateWorker(id: string, dto: UpdateWorkerDto, user: any) {
     const branch = this.branchFor(user, (dto as any).branch);
+    const currentWorker = await this.workerModel.findOne({ _id: id, ...(branch ? { branch } : {}) }).exec();
+    if (!currentWorker) throw new NotFoundException('Worker not found');
+
+    if (
+      currentWorker.truck &&
+      dto.role !== undefined &&
+      String(dto.role || '').trim().toLowerCase() !== 'driver'
+    ) {
+      throw new BadRequestException('This worker is assigned to a truck. Change the truck assignment before changing the Driver role.');
+    }
+
+    const nextName = String(dto.name ?? currentWorker.name).trim().toLowerCase();
+    const nextPhone = String(dto.phoneNumber ?? currentWorker.phoneNumber ?? '').replace(/\D/g, '');
+    const otherWorkers = await this.workerModel.find({
+      branch: currentWorker.branch,
+      _id: { $ne: currentWorker._id },
+    }).exec();
+    const duplicate = otherWorkers.find((worker) => {
+      if (worker.name.trim().toLowerCase() === nextName) return true;
+      const workerPhone = String(worker.phoneNumber || '').replace(/\D/g, '');
+      return Boolean(nextPhone) && workerPhone === nextPhone;
+    });
+    if (duplicate) {
+      throw new BadRequestException(
+        duplicate.name.trim().toLowerCase() === nextName
+          ? 'A worker with this name already exists.'
+          : 'A worker with this phone number already exists.',
+      );
+    }
+
     const worker = await this.workerModel.findOneAndUpdate({ _id: id, ...(branch ? { branch } : {}) }, dto, { new: true });
     if (!worker) throw new NotFoundException('Worker not found');
     // Keep a linked truck's own driver fields in sync so editing this person
@@ -156,21 +143,24 @@ export class WorkersService {
 
   async removeWorker(id: string, user: any) {
     const branch = this.branchFor(user, (user as any).requestedBranch);
-    const worker = await this.workerModel.findOneAndUpdate({ _id: id, ...(branch ? { branch } : {}) }, { isActive: false }, { new: true });
+    const worker = await this.workerModel.findOne({ _id: id, ...(branch ? { branch } : {}) }).exec();
     if (!worker) throw new NotFoundException('Worker not found');
-    return worker;
+    if (worker.truck) {
+      throw new BadRequestException('This worker is assigned to a truck. Change or remove the driver assignment before removing the worker.');
+    }
+    worker.isActive = false;
+    return worker.save();
   }
 
-  async createAttendance(dto: CreateWorkerAttendanceDto, user: any) {
+  async createBuying(dto: CreateWorkerBuyingDto, user: any) {
     const worker = await this.ensureWorker(dto.worker, user);
     const branch = worker.branch;
-    return this.attendanceModel.findOneAndUpdate(
+    return this.buyingModel.findOneAndUpdate(
       { worker: dto.worker, branch, date: this.dayStart(dto.date) },
       {
         worker: dto.worker,
         branch,
         date: this.dayStart(dto.date),
-        status: dto.status,
         buyingAmount: dto.buyingAmount,
         notes: dto.notes || '',
       },
@@ -178,12 +168,8 @@ export class WorkersService {
     ).populate('worker').exec();
   }
 
-  createBuying(dto: CreateWorkerBuyingDto, user: any) {
-    return this.createAttendance({ ...dto, status: WorkerAttendanceStatus.PRESENT }, user);
-  }
-
-  async findAttendance(from: string | undefined, to: string | undefined, worker: string | undefined, user: any, requestedBranch?: string, limit?: string) {
-    const query: any = {};
+  async findBuying(from: string | undefined, to: string | undefined, worker: string | undefined, user: any, requestedBranch?: string, limit?: string) {
+    const query: any = { buyingAmount: { $gt: 0 } };
     const branch = this.branchFor(user, requestedBranch);
     if (branch) query.branch = branch;
     if (worker) query.worker = worker;
@@ -193,7 +179,7 @@ export class WorkersService {
       if (to) query.date.$lte = this.dayEnd(to);
     }
     const requestedLimit = Math.min(Math.max(Number(limit) || 0, 0), 100);
-    let recordQuery = this.attendanceModel.find(query).populate('worker').sort({ date: -1, updatedAt: -1 });
+    let recordQuery = this.buyingModel.find(query).populate('worker').sort({ date: -1, updatedAt: -1 });
     if (requestedLimit) recordQuery = recordQuery.limit(requestedLimit);
     const records = await recordQuery.exec();
     return records.map((record: any) => ({
@@ -202,31 +188,27 @@ export class WorkersService {
     }));
   }
 
-  async updateAttendance(id: string, dto: UpdateWorkerAttendanceDto, user: any) {
+  async updateBuying(id: string, dto: UpdateWorkerBuyingDto, user: any) {
     const worker = await this.ensureWorker(dto.worker, user);
-    const record = await this.attendanceModel.findOneAndUpdate(
+    const record = await this.buyingModel.findOneAndUpdate(
       { _id: id, branch: worker.branch },
       { ...dto, date: this.dayStart(dto.date) },
       { new: true },
     ).populate('worker');
-    if (!record) throw new NotFoundException('Attendance record not found');
+    if (!record) throw new NotFoundException('Worker amount record not found');
     return record;
   }
 
-  updateBuying(id: string, dto: UpdateWorkerBuyingDto, user: any) {
-    return this.updateAttendance(id, { ...dto, status: WorkerAttendanceStatus.PRESENT }, user);
-  }
-
-  async removeAttendance(id: string, user: any) {
+  async removeBuying(id: string, user: any) {
     const query: any = { _id: id };
     if (user.role !== 'super_admin') query.branch = user.branch;
-    const record = await this.attendanceModel.findOneAndDelete(query);
-    if (!record) throw new NotFoundException('Attendance record not found');
+    const record = await this.buyingModel.findOneAndDelete(query);
+    if (!record) throw new NotFoundException('Worker amount record not found');
     return { deleted: true };
   }
 
   async totalBuyingInRange(from: Date, to: Date, branchId?: string) {
-    const records = await this.attendanceModel.find({ date: { $gte: from, $lte: to }, ...(branchId ? { branch: branchId } : {}) }).exec();
+    const records = await this.buyingModel.find({ buyingAmount: { $gt: 0 }, date: { $gte: from, $lte: to }, ...(branchId ? { branch: branchId } : {}) }).exec();
     return records.reduce((sum, record) => sum + Number(record.buyingAmount || 0), 0);
   }
 
@@ -236,7 +218,7 @@ export class WorkersService {
     const to = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 0, 23, 59, 59, 999));
     const [workers, records] = await Promise.all([
       this.workerModel.find({ isActive: true, ...(this.branchFor(user, requestedBranch) ? { branch: this.branchFor(user, requestedBranch) } : {}) }).sort({ name: 1 }).exec(),
-      this.attendanceModel.find({ ...(this.branchFor(user, requestedBranch) ? { branch: this.branchFor(user, requestedBranch) } : {}), date: { $gte: from, $lte: to } }).exec(),
+      this.buyingModel.find({ buyingAmount: { $gt: 0 }, ...(this.branchFor(user, requestedBranch) ? { branch: this.branchFor(user, requestedBranch) } : {}), date: { $gte: from, $lte: to } }).exec(),
     ]);
 
     return workers.map((worker: any) => {

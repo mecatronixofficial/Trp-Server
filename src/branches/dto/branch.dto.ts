@@ -1,13 +1,11 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsMongoId, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class CreateBranchDto {
   @IsString() @IsNotEmpty() name: string;
   @IsString() @IsNotEmpty() code: string;
   @IsOptional() @IsString() address?: string;
   @IsOptional() @IsString() phoneNumber?: string;
-  @IsString() @IsNotEmpty() adminName: string;
-  @IsString() @IsNotEmpty() adminUsername: string;
-  @IsString() @MinLength(6) adminPassword: string;
+  @IsMongoId() adminId: string;
 }
 
 export class UpdateBranchDto {
@@ -15,6 +13,7 @@ export class UpdateBranchDto {
   @IsOptional() @IsString() address?: string;
   @IsOptional() @IsString() phoneNumber?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsMongoId() adminId?: string;
 }
 
 export class ResetBranchAdminPasswordDto {

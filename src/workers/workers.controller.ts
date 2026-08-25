@@ -4,10 +4,8 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../common/enums';
 import {
-  CreateWorkerAttendanceDto,
   CreateWorkerBuyingDto,
   CreateWorkerDto,
-  UpdateWorkerAttendanceDto,
   UpdateWorkerBuyingDto,
   UpdateWorkerDto,
 } from './dto/worker.dto';
@@ -45,29 +43,14 @@ export class WorkersController {
     return this.workersService.removeWorker(id, user);
   }
 
-  @Post('attendance')
-  createAttendance(@Body() dto: CreateWorkerAttendanceDto, @CurrentUser() user: any) {
-    return this.workersService.createAttendance(dto, user);
-  }
-
   @Post('buying')
   createBuying(@Body() dto: CreateWorkerBuyingDto, @CurrentUser() user: any) {
     return this.workersService.createBuying(dto, user);
   }
 
-  @Get('attendance')
-  findAttendance(@CurrentUser() user: any, @Query('from') from?: string, @Query('to') to?: string, @Query('worker') worker?: string, @Query('branch') branch?: string) {
-    return this.workersService.findAttendance(from, to, worker, user, branch);
-  }
-
   @Get('buying')
   findBuying(@CurrentUser() user: any, @Query('from') from?: string, @Query('to') to?: string, @Query('worker') worker?: string, @Query('branch') branch?: string, @Query('limit') limit?: string) {
-    return this.workersService.findAttendance(from, to, worker, user, branch, limit);
-  }
-
-  @Patch('attendance/:id')
-  updateAttendance(@Param('id') id: string, @Body() dto: UpdateWorkerAttendanceDto, @CurrentUser() user: any) {
-    return this.workersService.updateAttendance(id, dto, user);
+    return this.workersService.findBuying(from, to, worker, user, branch, limit);
   }
 
   @Patch('buying/:id')
@@ -75,13 +58,8 @@ export class WorkersController {
     return this.workersService.updateBuying(id, dto, user);
   }
 
-  @Delete('attendance/:id')
-  removeAttendance(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.workersService.removeAttendance(id, user);
-  }
-
   @Delete('buying/:id')
   removeBuying(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.workersService.removeAttendance(id, user);
+    return this.workersService.removeBuying(id, user);
   }
 }

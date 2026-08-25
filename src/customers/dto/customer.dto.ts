@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsIn, IsMongoId, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsIn, IsMongoId, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { SaleType } from '../../common/enums';
 
 export class CreateCustomerDto {
@@ -16,6 +16,12 @@ export class CreateCustomerDto {
 
   @IsOptional() @IsEnum(SaleType)
   defaultSaleType?: SaleType;
+
+  @IsOptional() @IsNumber() @Min(0)
+  retailPrice?: number;
+
+  @IsOptional() @IsNumber() @Min(0)
+  wholesalePrice?: number;
 
   @IsOptional() @IsString()
   notes?: string;
@@ -39,6 +45,12 @@ export class UpdateCustomerDto {
 
   @IsOptional() @IsEnum(SaleType)
   defaultSaleType?: SaleType;
+
+  @IsOptional() @IsNumber() @Min(0)
+  retailPrice?: number;
+
+  @IsOptional() @IsNumber() @Min(0)
+  wholesalePrice?: number;
 
   @IsOptional() @IsBoolean()
   isActive?: boolean;
