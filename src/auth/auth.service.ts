@@ -47,6 +47,7 @@ export class AuthService {
         role: user.role,
         truck: user.truck,
         displayName: user.displayName,
+        profileImage: user.profileImage,
         branch: user.branch,
       },
     };
@@ -64,10 +65,11 @@ export class AuthService {
       displayName: user.displayName,
       phoneNumber: user.phoneNumber,
       email: user.email,
+      profileImage: user.profileImage,
     };
   }
 
-  async updateOwnProfile(userId: string, dto: { displayName?: string; phoneNumber?: string; email?: string }) {
+  async updateOwnProfile(userId: string, dto: { displayName?: string; phoneNumber?: string; email?: string; profileImage?: string }) {
     const updated = await this.usersService.updateProfile(userId, dto);
     if (!updated) throw new UnauthorizedException('Account not found');
     return this.getProfile(userId);

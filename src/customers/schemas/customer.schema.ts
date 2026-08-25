@@ -24,6 +24,12 @@ export class Customer {
   @Prop({ enum: SaleType, default: SaleType.RETAIL })
   defaultSaleType: SaleType;
 
+  @Prop({ default: 0, min: 0 })
+  retailPrice: number;
+
+  @Prop({ default: 0, min: 0 })
+  wholesalePrice: number;
+
   @Prop({ default: 0 })
   creditBalance: number; // running balance owed by this customer
 

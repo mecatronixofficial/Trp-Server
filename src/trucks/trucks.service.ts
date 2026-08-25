@@ -41,13 +41,16 @@ export class TrucksService {
         displayName: dto.truckName,
         branch,
       });
-      await this.workersService.createDriver(
+      const driver = await this.workersService.assignDriver(
+        dto.worker,
         truck._id.toString(),
         String(branch),
-        dto.driverName,
-        dto.phoneNumber,
       );
+      truck.driverName = driver.name;
+      truck.phoneNumber = driver.phoneNumber || '';
+      await truck.save();
     } catch (error) {
+      await this.workersService.unassignDriver(truck._id.toString());
       await this.usersService.deleteByTruck(truck._id.toString());
       await truck.deleteOne();
       throw error;
@@ -77,9 +80,15 @@ export class TrucksService {
     const filter: any = { _id: id };
     if (actor?.role !== Role.SUPER_ADMIN) filter.branch = actor?.branch;
     else if (actor?.selectedBranch) filter.branch = actor.selectedBranch;
-    const truck = await this.truckModel.findOne(filter).exec();
+    const truck = await this.truckModel.findOne(filter).populate('branch', 'name code').exec();
     if (!truck) throw new NotFoundException('Truck not found');
-    return truck;
+    const [presence]: any[] = await this.usersService.findTruckPresence([id]);
+    const lastSeenAt = presence?.lastSeenAt ? new Date(presence.lastSeenAt) : null;
+    return {
+      ...truck.toObject(),
+      isOnline: Boolean(presence?.isOnline && lastSeenAt && lastSeenAt.getTime() >= Date.now() - 90_000),
+      lastSeenAt,
+    };
   }
 
   async assertOnline(id: string) {
@@ -99,14 +108,17 @@ export class TrucksService {
     const filter: any = { _id: id };
     if (actor?.role !== Role.SUPER_ADMIN) filter.branch = actor?.branch;
     else if (actor?.selectedBranch) filter.branch = actor.selectedBranch;
-    const truck = await this.truckModel.findOneAndUpdate(filter, dto, { new: true });
-    if (!truck) throw new NotFoundException('Truck not found');
-    await this.workersService.updateDriver(id, String(truck.branch), {
-      ...(dto.driverName !== undefined ? { name: dto.driverName } : {}),
-      ...(dto.phoneNumber !== undefined ? { phoneNumber: dto.phoneNumber } : {}),
-      ...(dto.status !== undefined ? { isActive: dto.status } : {}),
-    });
-    return truck;
+    const existingTruck = await this.truckModel.findOne(filter);
+    if (!existingTruck) throw new NotFoundException('Truck not found');
+
+    const { worker, ...truckChanges } = dto;
+    if (worker) {
+      const driver = await this.workersService.assignDriver(worker, id, String(existingTruck.branch));
+      truckChanges.driverName = driver.name;
+      truckChanges.phoneNumber = driver.phoneNumber || '';
+    }
+
+    return this.truckModel.findOneAndUpdate(filter, truckChanges, { new: true });
   }
 
   async setStatus(id: string, status: boolean, actor?: any) {
@@ -123,7 +135,7 @@ export class TrucksService {
     const truck = await this.truckModel.findOneAndDelete(filter);
     if (!truck) throw new NotFoundException('Truck not found');
     await this.usersService.deleteByTruck(id);
-    await this.workersService.deactivateDriver(id);
+    await this.workersService.unassignDriver(id);
     return { deleted: true };
   }
 

@@ -52,13 +52,11 @@ export class TruckLoadsService {
     // stock entries dated strictly before today, so it can never see that
     // same-day return — same fix as DailyClosingService.calculate().
     const sameDayReturn = Math.max(0, Number(closing?.returnedTotal ?? closing?.returned ?? 0));
-    const openingStock = producedBars <= 0
-      ? 0
-      : sameDayReturn > 0
-        ? sameDayReturn
-        : latestStock && (!latestProductionDay || latestStock.day >= latestProductionDay)
-          ? latestStock.total
-          : 0;
+    const openingStock = sameDayReturn > 0
+      ? sameDayReturn
+      : latestStock && (!latestProductionDay || latestStock.day >= latestProductionDay)
+        ? latestStock.total
+        : 0;
     const available = producedBars + openingStock + outsourced - stocked - wastedBars - loadedBars - soldBars;
     if (requestedBars > available + 0.0001) {
       const remaining = Math.max(available, 0);
@@ -72,10 +70,12 @@ export class TruckLoadsService {
     const truckId = user.role === 'truck' ? user.truck : dto.truck;
     if (!truckId) throw new NotFoundException('Truck is required');
     const truck = await this.trucksService.findOne(truckId, user);
-    await assertDayOpen(this.closingModel, truck.branch.toString(), dto.date);
+    const branch = String((truck as any)?.branch?._id || truck.branch || '');
+    if (!branch) throw new BadRequestException('The selected truck is not assigned to a branch.');
+    await assertDayOpen(this.closingModel, branch, dto.date);
     await this.assertTripOpen(truckId, dto.date);
-    await this.assertShopStock(truck.branch.toString(), dto.date, { [dto.size || '1']: dto.quantity });
-    return this.loadModel.create({ ...dto, truck: truckId, branch: truck.branch, date: new Date(dto.date), size: dto.size || '1' });
+    await this.assertShopStock(branch, dto.date, { [dto.size || '1']: dto.quantity });
+    return this.loadModel.create({ ...dto, truck: truckId, branch, date: new Date(dto.date), size: dto.size || '1' });
   }
 
   async upsertAssignedLoad(truckId: string, branch: string, date: string, quantity: number, notes?: string) {
@@ -325,6 +325,52 @@ export class TruckLoadsService {
       requiresAdminApproval,
       balanceDiscrepancy,
     };
+  }
+
+  /**
+   * Finalize every unfinished truck trip for a branch when the calendar day
+   * rolls over. Remaining bars are recorded as returned stock, and negative
+   * discrepancies receive the same balancing correction used by an accepted
+   * manual reconciliation.
+   */
+  async autoCloseBranchTrips(branch: string, date: string) {
+    const rows: any[] = await this.reconciliation({ role: 'admin', branch }, date);
+    const closedAt = new Date();
+
+    for (const row of rows.filter((item) => Number(item.taken || 0) > 0.0001)) {
+      const truckId = String(row.truckId || '');
+      if (!truckId) continue;
+
+      const remaining = Number(row.remaining || 0);
+      if (!row.driverClosed && remaining > 0.0001) {
+        const { from } = this.dateBounds(date);
+        await this.wastageModel.create({
+          branch,
+          truck: truckId,
+          date: from,
+          size: '1',
+          quantity: remaining,
+          reason: 'unsold',
+          notes: 'Automatically returned at midnight closing',
+        });
+      }
+
+      const statusUpdate: Record<string, any> = {};
+      if (!row.driverClosed) statusUpdate.driverClosedAt = closedAt;
+      if (!row.checked) {
+        statusUpdate.checkedAt = closedAt;
+        statusUpdate.checkedBy = null;
+      }
+      if (Object.keys(statusUpdate).length) {
+        await this.loadModel.updateMany(
+          { truck: truckId, branch, ...this.dateQuery(date) },
+          { $set: statusUpdate },
+        );
+      }
+      await this.correctAcceptedNegativeBalance(truckId, date, branch);
+    }
+
+    return this.reconciliation({ role: 'admin', branch }, date);
   }
 
   private dateBounds(date: string | Date) { const day = new Date(date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); return { from: new Date(`${day}T00:00:00.000+05:30`), to: new Date(`${day}T23:59:59.999+05:30`) }; }

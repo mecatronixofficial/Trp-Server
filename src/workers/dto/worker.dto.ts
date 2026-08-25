@@ -1,5 +1,4 @@
-import { IsBoolean, IsDateString, IsEnum, IsMongoId, IsNumber, IsOptional, IsString, Min } from 'class-validator';
-import { WorkerAttendanceStatus } from '../schemas/worker-attendance.schema';
+import { IsBoolean, IsDateString, IsMongoId, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateWorkerDto {
   @IsString()
@@ -19,25 +18,6 @@ export class CreateWorkerDto {
 }
 
 export class UpdateWorkerDto extends CreateWorkerDto {}
-
-export class CreateWorkerAttendanceDto {
-  @IsMongoId()
-  worker: string;
-
-  @IsDateString()
-  date: string;
-
-  @IsEnum(WorkerAttendanceStatus)
-  status: WorkerAttendanceStatus;
-
-  @IsNumber() @Min(0)
-  buyingAmount: number;
-
-  @IsOptional() @IsString()
-  notes?: string;
-}
-
-export class UpdateWorkerAttendanceDto extends CreateWorkerAttendanceDto {}
 
 export class CreateWorkerBuyingDto {
   @IsMongoId()

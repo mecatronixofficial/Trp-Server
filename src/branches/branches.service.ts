@@ -14,9 +14,7 @@ export class BranchesService {
   ) {}
 
   async create(dto: CreateBranchDto) {
-    if (await this.usersService.findByUsername(dto.adminUsername)) {
-      throw new BadRequestException('Admin username is already in use');
-    }
+    const admin = await this.getAvailableAdmin(dto.adminId);
     if (await this.branchModel.exists({ code: dto.code.trim().toUpperCase() })) {
       throw new BadRequestException('Branch code is already in use');
     }
@@ -42,13 +40,7 @@ export class BranchesService {
       throw error;
     }
     try {
-      await this.usersService.createUser({
-        username: dto.adminUsername,
-        password: dto.adminPassword,
-        displayName: dto.adminName,
-        role: Role.ADMIN,
-        branch: branch._id.toString(),
-      });
+      await this.usersService.assignAdminToBranch(admin._id.toString(), branch._id.toString());
     } catch (error) {
       await branch.deleteOne();
       throw error;
@@ -64,6 +56,18 @@ export class BranchesService {
   async update(id: string, dto: UpdateBranchDto) {
     const existing = await this.branchModel.findById(id);
     if (!existing) throw new NotFoundException('Branch not found');
+    let selectedAdmin = null;
+    if (dto.adminId) {
+      selectedAdmin = await this.usersService.findById(dto.adminId);
+      if (!selectedAdmin || selectedAdmin.role !== Role.ADMIN) throw new NotFoundException('Administrator not found');
+      const assignedBranch = selectedAdmin.branch?.toString();
+      if (assignedBranch && assignedBranch !== id) {
+        throw new BadRequestException('This administrator is already assigned to another branch');
+      }
+      if (!selectedAdmin.isActive && assignedBranch !== id) {
+        throw new BadRequestException('Activate the administrator before assigning a branch');
+      }
+    }
     if (dto.name && dto.name.trim().toLowerCase() !== existing.name.trim().toLowerCase()) {
       const duplicateName = await this.branchModel.exists({ _id: { $ne: id }, name: { $regex: `^${this.escapeRegex(dto.name.trim())}$`, $options: 'i' } });
       if (duplicateName) throw new BadRequestException('Branch name is already in use');
@@ -72,11 +76,12 @@ export class BranchesService {
       const duplicatePhone = dto.phoneNumber.trim() && await this.branchModel.exists({ _id: { $ne: id }, phoneNumber: dto.phoneNumber.trim() });
       if (duplicatePhone) throw new BadRequestException('Phone number is already in use');
     }
-    const branch = await this.branchModel.findByIdAndUpdate(id, dto, { new: true });
+    const { adminId, ...branchUpdate } = dto;
+    const branch = await this.branchModel.findByIdAndUpdate(id, branchUpdate, { new: true });
     if (!branch) throw new NotFoundException('Branch not found');
-    if (dto.isActive !== undefined) {
-      const admin = await this.usersService.findBranchAdmin(id);
-      if (admin) await this.usersService.setActive(admin._id.toString(), dto.isActive);
+    if (selectedAdmin && adminId) {
+      await this.usersService.unassignBranchAdmins(id, adminId);
+      await this.usersService.assignAdminToBranch(adminId, id);
     }
     return this.withAdmin(branch);
   }
@@ -113,6 +118,18 @@ export class BranchesService {
     return { id: admin._id, username: admin.username, displayName: admin.displayName, isActive: admin.isActive, branch: admin.branch };
   }
 
+  async createUnassignedAdmin(dto: CreateBranchAdminDto) {
+    if (await this.usersService.findByUsername(dto.username)) throw new BadRequestException('Admin username is already in use');
+    const admin = await this.usersService.createUser({
+      username: dto.username,
+      password: dto.password,
+      displayName: dto.displayName,
+      role: Role.ADMIN,
+      branch: null,
+    });
+    return { id: admin._id, username: admin.username, displayName: admin.displayName, isActive: admin.isActive, branch: null };
+  }
+
   findAdmins(branchId?: string) {
     return this.usersService.findBranchAdmins(branchId);
   }
@@ -133,6 +150,7 @@ export class BranchesService {
   async removeAdmin(adminId: string) {
     const admin = await this.usersService.findById(adminId);
     if (!admin || admin.role !== Role.ADMIN) throw new NotFoundException('Branch admin not found');
+    if (admin.branch) throw new BadRequestException('Change the branch administrator before deleting this account');
     // Same deliberate-confirmation pattern as branch deletion: disable the
     // login first, then delete it, rather than removing an active account
     // in one click.
@@ -149,6 +167,14 @@ export class BranchesService {
       admin: admin ? { id: admin._id, username: admin.username, displayName: admin.displayName, isActive: admin.isActive } : null,
       admins: admins.map((item: any) => ({ id: item._id, username: item.username, displayName: item.displayName, isActive: item.isActive })),
     };
+  }
+
+  private async getAvailableAdmin(adminId: string) {
+    const admin = await this.usersService.findById(adminId);
+    if (!admin || admin.role !== Role.ADMIN) throw new NotFoundException('Administrator not found');
+    if (admin.branch) throw new BadRequestException('This administrator is already assigned to another branch');
+    if (!admin.isActive) throw new BadRequestException('Activate the administrator before assigning a branch');
+    return admin;
   }
 
   private escapeRegex(value: string) {

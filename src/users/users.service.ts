@@ -91,22 +91,38 @@ export class UsersService {
   findBranchAdmins(branchId?: string) {
     const query: any = { role: Role.ADMIN };
     if (branchId) query.branch = branchId;
-    return this.userModel.find(query).select('-passwordHash -resetOtpHash').populate('branch', 'name code').sort({ createdAt: -1 }).exec();
+    return this.userModel.find(query).select('-passwordHash -resetOtpHash').populate('branch', 'name code isActive').sort({ createdAt: -1 }).exec();
+  }
+
+  async assignAdminToBranch(adminId: string, branchId: string) {
+    return this.userModel.findOneAndUpdate(
+      { _id: adminId, role: Role.ADMIN },
+      { branch: branchId },
+      { new: true },
+    );
+  }
+
+  async unassignBranchAdmins(branchId: string, exceptAdminId?: string) {
+    const query: any = { branch: branchId, role: Role.ADMIN };
+    if (exceptAdminId) query._id = { $ne: exceptAdminId };
+    return this.userModel.updateMany(query, { branch: null, isOnline: false });
   }
 
   async deleteBranchUsers(branchId: string) {
-    return this.userModel.deleteMany({ branch: branchId });
+    await this.unassignBranchAdmins(branchId);
+    return this.userModel.deleteMany({ branch: branchId, role: { $ne: Role.ADMIN } });
   }
 
   async deleteUser(userId: string) {
     return this.userModel.deleteOne({ _id: userId });
   }
 
-  async updateProfile(userId: string, dto: { displayName?: string; phoneNumber?: string; email?: string }) {
+  async updateProfile(userId: string, dto: { displayName?: string; phoneNumber?: string; email?: string; profileImage?: string }) {
     const update: Record<string, string> = {};
     if (dto.displayName !== undefined) update.displayName = dto.displayName.trim();
     if (dto.phoneNumber !== undefined) update.phoneNumber = dto.phoneNumber.trim();
     if (dto.email !== undefined) update.email = dto.email.trim();
+    if (dto.profileImage !== undefined) update.profileImage = dto.profileImage.trim();
     return this.userModel.findByIdAndUpdate(userId, update, { new: true }).select('-passwordHash -resetOtpHash');
   }
 

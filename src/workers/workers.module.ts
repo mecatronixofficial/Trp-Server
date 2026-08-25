@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Worker, WorkerSchema } from './schemas/worker.schema';
-import { WorkerAttendance, WorkerAttendanceSchema } from './schemas/worker-attendance.schema';
+import { WorkerBuying, WorkerBuyingSchema } from './schemas/worker-buying.schema';
 import { Truck, TruckSchema } from '../trucks/schemas/truck.schema';
 import { WorkersController } from './workers.controller';
 import { WorkersService } from './workers.service';
@@ -10,7 +10,7 @@ import { WorkersService } from './workers.service';
   imports: [
     MongooseModule.forFeature([
       { name: Worker.name, schema: WorkerSchema },
-      { name: WorkerAttendance.name, schema: WorkerAttendanceSchema },
+      { name: WorkerBuying.name, schema: WorkerBuyingSchema },
       // Registered here (not by importing TrucksModule, which itself imports
       // WorkersModule) so a worker edit can keep a linked truck's driver
       // fields in sync without a circular module dependency.

@@ -15,13 +15,38 @@ import { totalBarQuantity } from '../common/bar-quantity';
 
 @Injectable()
 export class DailyClosingService implements OnModuleInit, OnModuleDestroy {
-  private timer?: NodeJS.Timeout;
+  private maintenanceTimer?: NodeJS.Timeout;
+  private midnightTimer?: NodeJS.Timeout;
+  private maintenanceRunning = false;
   private logger = new Logger(DailyClosingService.name);
   constructor(@InjectModel(DailyClosing.name) private model: Model<DailyClosingDocument>, @InjectModel(Branch.name) private branchModel: Model<BranchDocument>, private production: ProductionService, private sales: SalesService, private wastage: WastageService, private costs: MakingCostService, private truckLoads: TruckLoadsService, private stockEntries: StockEntryService, private settings: SettingsService, private messaging: MessagingService) {}
-  onModuleInit() { this.timer = setInterval(() => this.checkOverdueClosings().catch((e) => this.logger.error(e)), 5 * 60 * 1000); this.timer.unref(); setTimeout(() => this.checkOverdueClosings().catch((e) => this.logger.error(e)), 5000); }
-  onModuleDestroy() { if (this.timer) clearInterval(this.timer); }
+  onModuleInit() {
+    this.maintenanceTimer = setInterval(() => this.checkOverdueClosings().catch((e) => this.logger.error(e)), 5 * 60 * 1000);
+    this.maintenanceTimer.unref();
+    this.scheduleNextMidnight();
+    setTimeout(() => this.checkOverdueClosings().catch((e) => this.logger.error(e)), 5000);
+  }
+  onModuleDestroy() {
+    if (this.maintenanceTimer) clearInterval(this.maintenanceTimer);
+    if (this.midnightTimer) clearTimeout(this.midnightTimer);
+  }
   private bounds(date: string) { return { from: new Date(`${date}T00:00:00.000+05:30`), to: new Date(`${date}T23:59:59.999+05:30`) }; }
   private today() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); }
+  private indiaDayOffset(days: number) { return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); }
+  private scheduleNextMidnight() {
+    const nextMidnight = new Date(`${this.indiaDayOffset(1)}T00:00:01.000+05:30`).getTime();
+    const delay = Math.max(1000, nextMidnight - Date.now());
+    this.midnightTimer = setTimeout(async () => {
+      try {
+        await this.checkOverdueClosings();
+      } catch (error) {
+        this.logger.error('Automatic midnight closing failed', error);
+      } finally {
+        this.scheduleNextMidnight();
+      }
+    }, delay);
+    this.midnightTimer.unref();
+  }
   async calculate(branch: string, date: string) {
     const { from, to } = this.bounds(date);
     const previous = await this.model.findOne({ branch, date: { $lt: date }, status: 'closed' }).sort({ date: -1 });
@@ -46,9 +71,9 @@ export class DailyClosingService implements OnModuleInit, OnModuleDestroy {
       : latestStock && (!latestProductionDay || latestStock.day >= latestProductionDay)
         ? latestStock.total
         : previous?.closingBalance || 0;
-    const openingBalance = produced > 0
-      ? Math.max(0, Number(carryIn))
-      : 0;
+    // Yesterday's closing stock is immediately available as today's opening
+    // stock; a new production entry is not required to unlock carried bars.
+    const openingBalance = Math.max(0, Number(carryIn));
     let closingBalance = Math.max(0, openingBalance + produced - sold - wasted);
     let closingReturned = returned;
     closingReturned = Math.max(closingReturned, sameDayReturn);
@@ -99,6 +124,9 @@ export class DailyClosingService implements OnModuleInit, OnModuleDestroy {
     if (unclosed.length) throw new BadRequestException({ message: 'All drivers must close their truck day first', unclosedDrivers: unclosed.map((driver) => ({ truckId: driver.truckId, driverName: driver.truck?.driverName || 'Driver', truckName: driver.truck?.truckName || 'Truck', reason: driver.closeReason })) });
     const unchecked = activeDrivers.filter((driver) => !driver.checked);
     if (unchecked.length) throw new BadRequestException({ message: 'Admin must check every closed truck before closing the branch', unclosedDrivers: unchecked.map((driver) => ({ truckId: driver.truckId, driverName: driver.truck?.driverName || 'Driver', truckName: driver.truck?.truckName || 'Truck', reason: 'Truck closing has not been checked' })) });
+    return this.finalizeClose(branch, date, user.userId);
+  }
+  private async finalizeClose(branch: string, date: string, closedBy: string | null) {
     const row = await this.calculate(branch, date);
     const { from, to } = this.bounds(date);
     const [dayBoxes, productionSettings] = await Promise.all([
@@ -140,7 +168,7 @@ export class DailyClosingService implements OnModuleInit, OnModuleDestroy {
     row.lastSessionReturned = returnedBars;
     row.returnedTotal = totalReturnedStock;
     row.returned = row.returnedTotal;
-    row.status = 'closed'; row.closedAt = new Date(); row.closedBy = user.userId; return row.save();
+    row.status = 'closed'; row.closedAt = new Date(); row.closedBy = closedBy as any; return row.save();
   }
   async reopen(user: any, branchId: string | undefined, date: string) {
     const branch = user.role === 'admin' ? user.branch : branchId || user.selectedBranch;
@@ -155,13 +183,35 @@ export class DailyClosingService implements OnModuleInit, OnModuleDestroy {
     return row.save();
   }
   async checkOverdueClosings() {
-    const now = new Date(); const hour = Number(new Intl.DateTimeFormat('en-IN', { hour: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }).format(now));
-    if (hour < 20) return;
-    const date = this.today(); const branches = await this.branchModel.find({ isActive: true }); const settings = await this.settings.get(); const to = settings.whatsappNumber || settings.phoneNumber;
-    for (const branch of branches) {
-      const row = await this.calculate(branch._id.toString(), date);
-      if (row.status === 'closed' || row.alertSentAt || !to) continue;
-      try { const drivers: any[] = await this.truckLoads.reconciliation({ role: 'admin', branch: branch._id.toString() }, date); const openDrivers = drivers.filter((driver) => Number(driver.taken || 0) > 0.0001 && !driver.driverClosed).map((driver) => `${driver.truck?.driverName || driver.truck?.truckName || 'Driver'}: ${driver.closeReason}`).join('; '); await this.messaging.sendWhatsapp(to, `Tiruppur Ice alert: ${branch.name} (${branch.code}) daily account is not closed for ${date} after 8:00 PM. Driver status: ${openDrivers || 'All assigned drivers closed; branch admin closing pending'}. Produced ${row.produced}, sold ${row.sold}, returned ${row.returned}, wastage ${row.wastage}, balance ${row.closingBalance}, sales Rs.${row.sellingAmount}, making cost Rs.${row.makingCost}, profit Rs.${row.profit}.`); row.alertSentAt = new Date(); await row.save(); } catch (error) { this.logger.error(`WhatsApp closing alert failed for ${branch.name}`, error); }
+    if (this.maintenanceRunning) return;
+    this.maintenanceRunning = true;
+    try {
+      const branches = await this.branchModel.find({ isActive: true });
+      const previousDate = this.indiaDayOffset(-1);
+      for (const branch of branches) {
+        const branchId = branch._id.toString();
+        try {
+          const existing = await this.model.findOne({ branch: branchId, date: previousDate }).select('status');
+          if (existing?.status === 'closed') continue;
+          await this.truckLoads.autoCloseBranchTrips(branchId, previousDate);
+          await this.finalizeClose(branchId, previousDate, null);
+          this.logger.log(`Automatically closed ${branch.name} (${branch.code}) for ${previousDate}`);
+        } catch (error) {
+          this.logger.error(`Automatic closing failed for ${branch.name} (${branch.code}) on ${previousDate}`, error);
+        }
+      }
+
+      const now = new Date();
+      const hour = Number(new Intl.DateTimeFormat('en-IN', { hour: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }).format(now));
+      if (hour < 20 || hour >= 24) return;
+      const date = this.today(); const settings = await this.settings.get(); const to = settings.whatsappNumber || settings.phoneNumber;
+      for (const branch of branches) {
+        const row = await this.calculate(branch._id.toString(), date);
+        if (row.status === 'closed' || row.alertSentAt || !to) continue;
+        try { const drivers: any[] = await this.truckLoads.reconciliation({ role: 'admin', branch: branch._id.toString() }, date); const openDrivers = drivers.filter((driver) => Number(driver.taken || 0) > 0.0001 && !driver.driverClosed).map((driver) => `${driver.truck?.driverName || driver.truck?.truckName || 'Driver'}: ${driver.closeReason}`).join('; '); await this.messaging.sendWhatsapp(to, `Tiruppur Ice alert: ${branch.name} (${branch.code}) daily account is not closed for ${date} after 8:00 PM. Driver status: ${openDrivers || 'All assigned drivers closed; branch admin closing pending'}. Produced ${row.produced}, sold ${row.sold}, returned ${row.returned}, wastage ${row.wastage}, balance ${row.closingBalance}, sales Rs.${row.sellingAmount}, making cost Rs.${row.makingCost}, profit Rs.${row.profit}.`); row.alertSentAt = new Date(); await row.save(); } catch (error) { this.logger.error(`WhatsApp closing alert failed for ${branch.name}`, error); }
+      }
+    } finally {
+      this.maintenanceRunning = false;
     }
   }
 }

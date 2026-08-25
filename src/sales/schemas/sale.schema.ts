@@ -34,6 +34,12 @@ export class SalePayment {
 
   @Prop({ default: '' })
   notes: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'Truck', default: null })
+  collectedByTruck?: Types.ObjectId | null;
+
+  @Prop({ default: '' })
+  collectedByName?: string;
 }
 export const SalePaymentSchema = SchemaFactory.createForClass(SalePayment);
 

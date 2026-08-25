@@ -41,6 +41,9 @@ export class User {
   email: string | null;
 
   @Prop({ default: null })
+  profileImage: string | null;
+
+  @Prop({ default: null })
   resetOtpHash: string | null;
 
   @Prop({ default: null })

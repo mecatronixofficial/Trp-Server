@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model } from 'mongoose';
 import { Customer, CustomerDocument } from './schemas/customer.schema';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
+import { Truck, TruckDocument } from '../trucks/schemas/truck.schema';
 
 interface AuthUser {
   userId: string;
@@ -14,13 +15,24 @@ interface AuthUser {
 
 @Injectable()
 export class CustomersService {
-  constructor(@InjectModel(Customer.name) private customerModel: Model<CustomerDocument>) {}
+  constructor(
+    @InjectModel(Customer.name) private customerModel: Model<CustomerDocument>,
+    @InjectModel(Truck.name) private truckModel: Model<TruckDocument>,
+  ) {}
 
-  create(dto: CreateCustomerDto, user?: AuthUser) {
+  async create(dto: CreateCustomerDto, user?: AuthUser) {
     const truck = user?.role === 'truck' ? user.truck : dto.truck || null;
     const customerType = user?.role === 'truck' ? 'truck' : dto.customerType || (truck ? 'truck' : 'local');
     if (customerType === 'truck' && !truck) throw new BadRequestException('Select a truck for a truck customer');
-    const branch = user?.role === 'super_admin' ? user.selectedBranch : user?.branch;
+
+    let branch = user?.role === 'super_admin' ? user.selectedBranch : user?.branch;
+    if (user?.role === 'truck') {
+      const assignedTruck = await this.truckModel.findById(truck).select('branch status').exec();
+      if (!assignedTruck) throw new ForbiddenException('This login is not linked to a truck. Ask an admin to check the truck account.');
+      if (assignedTruck.status === false) throw new ForbiddenException('This truck login is disabled. Ask an admin to enable it.');
+      branch = String(assignedTruck.branch || '');
+    }
+    if (!branch) throw new BadRequestException('A branch is required before creating a customer');
     return this.customerModel.create({ ...dto, branch, customerType, truck: customerType === 'local' ? null : truck });
   }
 
@@ -32,21 +44,35 @@ export class CustomersService {
     // The sale itself is still stored against the logged-in driver's truck.
 
     if (search) {
+      const escapedSearch = this.escapeRegex(search);
       and.push({ $or: [
-        { name: { $regex: search, $options: 'i' } },
-        { phoneNumber: { $regex: search, $options: 'i' } },
+        { name: { $regex: escapedSearch, $options: 'i' } },
+        { phoneNumber: { $regex: escapedSearch, $options: 'i' } },
       ] });
     }
 
     if (and.length) query.$and = and;
 
-    const branch = user?.role === 'super_admin' ? user.selectedBranch : user?.branch;
+    let branch = user?.role === 'super_admin' ? user.selectedBranch : user?.branch;
+    if (user?.role === 'truck' && user.truck) {
+      const assignedTruck = await this.truckModel.findById(user.truck).select('branch').exec();
+      if (!assignedTruck) throw new ForbiddenException('This login is not linked to a truck');
+      branch = String(assignedTruck.branch || '');
+    }
     if (branch) query.branch = branch;
     return this.customerModel.find(query).populate('truck', 'truckName truckNumber driverName branch').sort({ name: 1 }).exec();
   }
 
   async findOne(id: string, user?: AuthUser) {
-    const customer = await this.customerModel.findById(id).populate('truck', 'truckName truckNumber driverName').exec();
+    const query: any = { _id: id };
+    let branch = user?.role === 'super_admin' ? user.selectedBranch : user?.branch;
+    if (user?.role === 'truck' && user.truck) {
+      const assignedTruck = await this.truckModel.findById(user.truck).select('branch').exec();
+      if (!assignedTruck) throw new ForbiddenException('This login is not linked to a truck');
+      branch = String(assignedTruck.branch || '');
+    }
+    if (branch) query.branch = branch;
+    const customer = await this.customerModel.findOne(query).populate('truck', 'truckName truckNumber driverName').exec();
     if (!customer) throw new NotFoundException('Customer not found');
     return customer;
   }
@@ -107,5 +133,9 @@ export class CustomersService {
       .sort({ createdAt: -1 })
       .limit(limit)
       .exec();
+  }
+
+  private escapeRegex(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }
