@@ -4,7 +4,7 @@
  */
 import 'dotenv/config';
 import * as mongoose from 'mongoose';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { UserSchema } from './users/schemas/user.schema';
 import { Role } from './common/enums';
 import { getMongoUri } from './config/mongo-uri';

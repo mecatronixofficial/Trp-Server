@@ -1,5 +1,8 @@
 export function getMongoUri(env: NodeJS.ProcessEnv = process.env): string {
-  const uri = env.MONGO_URI || 'mongodb://localhost:27017/tiruppur_ice';
+  const uri =
+    env.MONGODB_URI ||
+    env.MONGO_URI ||
+    'mongodb://localhost:27017/tiruppur_ice';
   const directHosts = env.MONGO_DIRECT_HOSTS?.trim();
 
   if (!directHosts || !uri.startsWith('mongodb+srv://')) {
